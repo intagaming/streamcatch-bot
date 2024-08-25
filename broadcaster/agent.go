@@ -50,9 +50,6 @@ func (a *Agent) ScheduledEndAt() time.Time {
 func (a *Agent) GoneOnline() bool {
 	return a.stream.GoneOnline
 }
-func (a *Agent) UserId() string {
-	return a.stream.UserId
-}
 func (a *Agent) ReadIPs() []string {
 	return a.readIPs
 }
@@ -119,8 +116,7 @@ func (a *Agent) Run() {
 				}
 				a.sugar.Debugw("Stream poller: Done", "streamId", a.stream.Id)
 				a.streamStarted = true
-				// TODO:
-				//a.SendGrpcStatus(pb.StreamStatus_STREAM_STARTED)
+				a.stream.Listener.Status(a.stream, StreamStarted)
 				return
 			}
 		}
@@ -166,8 +162,7 @@ func (a *Agent) Run() {
 		//	a.sugar.Panicw("Failed to update stream", "streamId", a.stream.Id, "error", err)
 		//}
 
-		// TODO:
-		//a.SendGrpcStatus(pb.StreamStatus_GONELIVE)
+		a.stream.Listener.Status(a.stream, GoneLive)
 	}
 
 	// Stop the dummy stream
@@ -256,18 +251,10 @@ func (a *Agent) Close(reason error, error string) {
 	//	}
 	//}
 
-	//if reason == reasonForceStopped {
-	//	a.SendGrpcStatus(pb.StreamStatus_FORCE_STOPPED)
-	//}
-	//a.SendGrpcStatus(pb.StreamStatus_ENDED)
-	//
-	//for _, conn := range a.GetGrpcConns() {
-	//	select {
-	//	case (*conn).Error <- grpcconn.ErrClosed:
-	//	default:
-	//		return
-	//	}
-	//}
+	if errors.Is(reason, reasonForceStopped) {
+		a.stream.Listener.Status(a.stream, ForceStopped)
+	}
+	a.stream.Listener.Status(a.stream, Ended)
 
 	a.sugar.Debugw("Agent closed", "streamId", a.stream.Id, "reason", reason)
 }
@@ -343,8 +330,7 @@ func (a *Agent) checkTimeout() {
 	if time.Now().After(a.stream.ScheduledEndAt) {
 		a.sugar.Debugw("Agent timed out", "streamId", a.stream.Id)
 
-		// TODO:
-		//a.SendGrpcStatus(pb.StreamStatus_TIMEOUT)
+		a.stream.Listener.Status(a.stream, Timeout)
 
 		a.Close(reasonTimeout, "")
 
@@ -359,22 +345,22 @@ func (a *Agent) checkTimeout() {
 //	}
 //}
 
-var (
-	ErrAgentClosed = errors.New("Agent is closed")
-)
+//var (
+//	ErrAgentClosed = errors.New("agent is closed")
+//)
 
-func (a *Agent) ResetReadIPs() error {
-	if a.ctx.Err() != nil {
-		return ErrAgentClosed
-	}
-
-	a.readIPs = []string{}
-
-	// TODO:
-	//a.SendGrpcStatus(pb.StreamStatus_TRY_AGAIN)
-
-	return nil
-}
+//func (a *Agent) ResetReadIPs() error {
+//	if a.ctx.Err() != nil {
+//		return ErrAgentClosed
+//	}
+//
+//	a.readIPs = []string{}
+//
+//	// TODO:
+//	//a.SendGrpcStatus(pb.StreamStatus_TRY_AGAIN)
+//
+//	return nil
+//}
 
 //func (a *Agent) GetGrpcConns() []*grpcconn.Connection {
 //	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)

@@ -7,6 +7,8 @@ import (
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -98,13 +100,74 @@ func New(sugar *zap.SugaredLogger) *Broadcaster {
 
 type Stream struct {
 	Id             int64
-	UserId         string
 	Url            string
 	Platform       string
 	CreatedAt      time.Time
 	ScheduledEndAt time.Time
 	TerminatedAt   time.Time
 	GoneOnline     bool
+	Listener       StreamStatusListener
+}
+
+type StreamStatus int
+
+const (
+	StreamStarted StreamStatus = iota
+	GoneLive
+	ForceStopped
+	Ended
+	Timeout
+)
+
+type StreamStatusListener interface {
+	Status(stream *Stream, status StreamStatus)
+}
+
+var (
+	errInvalidUrl = errors.New("invalid stream url")
+)
+
+var idCount int64 = 0
+
+const (
+	ScheduledEndDuration = 30 * time.Minute
+)
+
+func MakeStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
+	checkCmd := exec.CommandContext(ctx, "streamlink", "--can-handle-url", url)
+	err := checkCmd.Run()
+	if err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			if exitError.ExitCode() == 1 {
+				return nil, errInvalidUrl
+			}
+			return nil, exitError
+		}
+		return nil, err
+	}
+
+	var platform string
+	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
+		platform = "youtube"
+	} else if strings.Contains(url, "twitch.tv") {
+		platform = "twitch"
+	} else {
+		platform = "generic"
+	}
+
+	// if platform == "" {
+	// 	return nil, errInvalidUrl
+	// }
+	idCount += 1
+	return &Stream{
+		Id:             idCount,
+		Url:            url,
+		Platform:       platform,
+		CreatedAt:      time.Now(),
+		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+		Listener:       listener,
+	}, nil
 }
 
 func (b *Broadcaster) HandleStream(stream *Stream) *Agent {

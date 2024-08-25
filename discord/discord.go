@@ -1,11 +1,11 @@
 package discord
 
 import (
+	"context"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"os"
 	"streamcatch-bot/broadcaster"
-	"strings"
 )
 
 type Bot struct {
@@ -76,24 +76,53 @@ func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) 
 //	return i.User
 //}
 
-func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap) {
-	builder := new(strings.Builder)
-	//if v, ok := opts["author"]; ok && v.BoolValue() {
-	//	author := interactionAuthor(i.Interaction)
-	//	builder.WriteString("**" + author.String() + "** says: ")
-	//}
-	builder.WriteString(opts["message"].StringValue())
-
-	err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+func (bot *Bot) respondInteractionMessage(i *discordgo.Interaction, message string) {
+	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: builder.String(),
+			Content: message,
 		},
 	})
 
 	if err != nil {
 		bot.sugar.Panicf("could not respond to interaction: %s", err)
 	}
+}
+
+func (bot *Bot) EditMessage(channelId string, messageId string, message string) {
+	_, err := bot.session.ChannelMessageEdit(channelId, messageId, message)
+
+	if err != nil {
+		bot.sugar.Panicf("could not edit message: %s", err)
+	}
+}
+
+type StreamListener struct {
+	bot *Bot
+}
+
+func (sl StreamListener) Status(stream *broadcaster.Stream, status broadcaster.StreamStatus) {
+	// TODO: handle status, broadcast to discord
+}
+func NewStreamListener(bot *Bot) *StreamListener {
+	return &StreamListener{bot: bot}
+}
+
+func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap) {
+	url := opts["url"].StringValue()
+
+	// TODO: real interrupt context
+	ctx := context.Background()
+	stream, err := broadcaster.MakeStream(ctx, url, NewStreamListener(bot))
+	if err != nil {
+		bot.sugar.Errorf("could not create stream: %s", err)
+		bot.respondInteractionMessage(i.Interaction, "Failed to create stream.")
+		return
+	}
+
+	bot.broadcaster.HandleStream(stream)
+
+	bot.respondInteractionMessage(i.Interaction, "Please wait...")
 }
 
 const commandName = "streamcatch"
