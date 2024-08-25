@@ -18,19 +18,19 @@ func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) 
 	return
 }
 
-func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
-	if i.Member != nil {
-		return i.Member.User
-	}
-	return i.User
-}
+//func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
+//	if i.Member != nil {
+//		return i.Member.User
+//	}
+//	return i.User
+//}
 
-func handleEcho(s *discordgo.Session, i *discordgo.InteractionCreate, opts optionMap) {
+func handleStreamCatch(s *discordgo.Session, i *discordgo.InteractionCreate, opts optionMap) {
 	builder := new(strings.Builder)
-	if v, ok := opts["author"]; ok && v.BoolValue() {
-		author := interactionAuthor(i.Interaction)
-		builder.WriteString("**" + author.String() + "** says: ")
-	}
+	//if v, ok := opts["author"]; ok && v.BoolValue() {
+	//	author := interactionAuthor(i.Interaction)
+	//	builder.WriteString("**" + author.String() + "** says: ")
+	//}
 	builder.WriteString(opts["message"].StringValue())
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -47,19 +47,14 @@ func handleEcho(s *discordgo.Session, i *discordgo.InteractionCreate, opts optio
 
 var commands = []*discordgo.ApplicationCommand{
 	{
-		Name:        "echo",
-		Description: "Say something through a bot",
+		Name:        "streamcatch",
+		Description: "Catch a stream the moment it comes online",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
-				Name:        "message",
-				Description: "Contents of the message",
+				Name:        "url",
+				Description: "Stream URL",
 				Type:        discordgo.ApplicationCommandOptionString,
 				Required:    true,
-			},
-			{
-				Name:        "author",
-				Description: "Whether to prepend message's author",
-				Type:        discordgo.ApplicationCommandOptionBoolean,
 			},
 		},
 	},
@@ -68,7 +63,6 @@ var commands = []*discordgo.ApplicationCommand{
 func main() {
 	botToken := os.Getenv("BOT_TOKEN")
 	appId := os.Getenv("APP_ID")
-	//guildId := os.Getenv("BOT_TOKEN")
 
 	session, err := discordgo.New("Bot " + botToken)
 	if err != nil {
@@ -81,11 +75,9 @@ func main() {
 		}
 
 		data := i.ApplicationCommandData()
-		if data.Name != "echo" {
-			return
+		if data.Name == "streamcatch" {
+			handleStreamCatch(s, i, parseOptions(data.Options))
 		}
-
-		handleEcho(s, i, parseOptions(data.Options))
 	})
 
 	session.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
