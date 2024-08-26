@@ -20,7 +20,7 @@ func New(sugar *zap.SugaredLogger) *Bot {
 
 	session, err := discordgo.New("Bot " + botToken)
 	if err != nil {
-		panic(err)
+		sugar.Panicw("Failed to create new discordgo session", "err", err)
 	}
 
 	bc := broadcaster.New(sugar)

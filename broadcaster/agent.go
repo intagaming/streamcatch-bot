@@ -318,11 +318,13 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 				streamerFfmpegCmd.Stderr = &streamerFfmpegErrBuf
 				err := streamerFfmpegCmd.Start()
 				if err != nil {
-					panic(err)
+					a.Close(reasonErrored, fmt.Sprintf("failed to start ffmpeg cmd: %v", err))
+					return
 				}
 				err = streamerFfmpegCmd.Wait()
 				if err != nil {
-					panic(err)
+					a.Close(reasonErrored, fmt.Sprintf("failed to wait for ffmpeg cmd: %v", err))
+					return
 				}
 
 				if a.ctx.Err() != nil {
