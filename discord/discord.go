@@ -98,8 +98,14 @@ type StreamListener struct {
 func (sl StreamListener) Status(stream *broadcaster.Stream, status broadcaster.StreamStatus) {
 	var err error
 	switch status {
+	case broadcaster.StreamStarted:
+		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream started")
+	case broadcaster.GoneLive:
+		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream gone live")
 	case broadcaster.Ended:
 		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream ended")
+	case broadcaster.Timeout:
+		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream timeout")
 	default:
 		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Unhandled")
 	}

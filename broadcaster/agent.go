@@ -316,8 +316,14 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 				var streamerFfmpegErrBuf bytes.Buffer
 				streamerFfmpegCmd.Stdin = pipe
 				streamerFfmpegCmd.Stderr = &streamerFfmpegErrBuf
-				streamerFfmpegCmd.Start()
-				streamerFfmpegCmd.Wait()
+				err := streamerFfmpegCmd.Start()
+				if err != nil {
+					panic(err)
+				}
+				err = streamerFfmpegCmd.Wait()
+				if err != nil {
+					panic(err)
+				}
 
 				if a.ctx.Err() != nil {
 					return

@@ -1,0 +1,31 @@
+services:
+  streamcatch-bot:
+    image: streamcatch-bot
+    build: .
+    restart: unless-stopped
+    environment:
+      - APP_ID=${APP_ID}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - MEDIA_SERVER_HLS_URL=${MEDIA_SERVER_HLS_URL}
+      - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}
+      - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}
+      - TWITCH_AUTH_TOKEN=${TWITCH_AUTH_TOKEN}
+      - MEDIA_SERVER_RTSP_HOST=mediaserver:8554
+      - MEDIA_SERVER_PUBLISH_USER=${MEDIA_SERVER_PUBLISH_USER}
+      - MEDIA_SERVER_PUBLISH_PASSWORD=${MEDIA_SERVER_PUBLISH_PASSWORD}
+      - MEDIA_SERVER_API_URL=http://mediaserver:9997
+    networks:
+      - streamcatch
+
+  mediaserver:
+    image: bluenviron/mediamtx:1.8.5
+    ports:
+      - "8888:8888"
+    restart: unless-stopped
+    networks:
+      - streamcatch
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml
+
+networks:
+  streamcatch:

@@ -73,11 +73,23 @@ func (a *Agent) StreamFromTwitch(pipeWrite *io.PipeWriter, streamlinkErrBuf *byt
 	ffmpegCmd.Stdout = pipeWrite
 	ffmpegCmd.Stderr = ffmpegErrBuf
 
-	streamlinkCmd.Start()
-	ffmpegCmd.Start()
+	err = streamlinkCmd.Start()
+	if err != nil {
+		a.sugar.Panicw("Failed to start streamlink ", "url", a.stream.Url, "error", err)
+	}
+	err = ffmpegCmd.Start()
+	if err != nil {
+		a.sugar.Panicw("Failed to start ffmpeg ", "url", a.stream.Url, "error", err)
+	}
 
-	ffmpegCmd.Wait()
+	err = ffmpegCmd.Wait()
+	if err != nil {
+		a.sugar.Panicw("Failed to wait ffmpeg ", "url", a.stream.Url, "error", err)
+	}
 	if streamlinkCmd.ProcessState == nil {
-		streamlinkCmd.Process.Kill()
+		err := streamlinkCmd.Process.Kill()
+		if err != nil {
+			a.sugar.Panicw("Failed to kill streamlink ", "url", a.stream.Url, "error", err)
+		}
 	}
 }
