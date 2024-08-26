@@ -256,7 +256,7 @@ func (a *Agent) Close(reason error, error string) {
 	}
 	a.stream.Listener.Status(a.stream, Ended)
 
-	a.sugar.Debugw("Agent closed", "streamId", a.stream.Id, "reason", reason)
+	a.sugar.Debugw("Agent closed", "streamId", a.stream.Id, "reason", reason, "error", error)
 }
 
 func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) {
@@ -269,17 +269,27 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 			"-c:a", "aac", "-map", "0:v", "-map", "1:a", "-vf",
 			`drawtext=text='Waiting for the stream to start':fontcolor=white:fontsize=56:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=(h-text_h)/2-30,drawtext=text='Stream URL\: `+strings.Replace(a.stream.Url, ":", `\:`, -1)+`':fontcolor=white:fontsize=28:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=(h-text_h)/2+30,drawtext=text='%{gmtime\:%Y-%m-%d %H\\\:%M\\\:%S}':fontcolor=white:fontsize=28:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10`,
 			"-g", "4", "-f", "mpegts", "-")
-		var dummyFfmpegErrBuf bytes.Buffer
-		dummyFfmpegCmd.Stdout = pipeWrite
-		dummyFfmpegCmd.Stderr = &dummyFfmpegErrBuf
-		dummyFfmpegCmd.Start()
-		dummyFfmpegCmd.Wait()
+
+		var dummyFfmpegCombinedBuf bytes.Buffer
+		w := io.MultiWriter(pipeWrite, &dummyFfmpegCombinedBuf)
+		dummyFfmpegCmd.Stdout = w
+		dummyFfmpegCmd.Stderr = &dummyFfmpegCombinedBuf
+		err := dummyFfmpegCmd.Start()
+		if err != nil {
+			a.Close(reasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
+			return
+		}
+		err = dummyFfmpegCmd.Wait()
+		if err != nil {
+			a.Close(reasonErrored, fmt.Sprintf("failed to wait for dummy stream ffmpeg cmd: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
+			return
+		}
 
 		if a.stream.GoneOnline || ctx.Err() != nil {
 			return
 		}
 
-		a.Close(reasonErrored, fmt.Sprintf("dummy stream ffmpeg failed: %v", dummyFfmpegErrBuf.String()))
+		a.Close(reasonErrored, fmt.Sprintf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf))
 		return
 	}()
 }

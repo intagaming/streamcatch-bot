@@ -5,6 +5,7 @@ import (
 	"go.uber.org/zap"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"streamcatch-bot/discord"
 )
@@ -35,6 +36,14 @@ func main() {
 	}
 	defer logger.Sync()
 	sugar := logger.Sugar()
+
+	if _, err := exec.LookPath("streamlink"); err != nil {
+		sugar.Panic("streamlink not found")
+	}
+
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		sugar.Panic("ffmpeg not found")
+	}
 
 	bot := discord.New(sugar)
 

@@ -69,13 +69,6 @@ func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) 
 	return
 }
 
-//func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
-//	if i.Member != nil {
-//		return i.Member.User
-//	}
-//	return i.User
-//}
-
 func (bot *Bot) respondInteractionMessage(i *discordgo.Interaction, message string) {
 	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -98,14 +91,24 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 }
 
 type StreamListener struct {
-	bot *Bot
+	bot         *Bot
+	interaction *discordgo.Interaction
 }
 
 func (sl StreamListener) Status(stream *broadcaster.Stream, status broadcaster.StreamStatus) {
-	// TODO: handle status, broadcast to discord
+	var err error
+	switch status {
+	case broadcaster.Ended:
+		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream ended")
+	default:
+		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Unhandled")
+	}
+	if err != nil {
+		sl.bot.sugar.Errorf("could not send status to discord: %s", err)
+	}
 }
-func NewStreamListener(bot *Bot) *StreamListener {
-	return &StreamListener{bot: bot}
+func (bot *Bot) NewStreamListener(i *discordgo.Interaction) *StreamListener {
+	return &StreamListener{bot: bot, interaction: i}
 }
 
 func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap) {
@@ -113,7 +116,7 @@ func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap
 
 	// TODO: real interrupt context
 	ctx := context.Background()
-	stream, err := broadcaster.MakeStream(ctx, url, NewStreamListener(bot))
+	stream, err := broadcaster.MakeStream(ctx, url, bot.NewStreamListener(i.Interaction))
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
 		bot.respondInteractionMessage(i.Interaction, "Failed to create stream.")
