@@ -2,10 +2,13 @@ package discord
 
 import (
 	"context"
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"os"
+	"strconv"
 	"streamcatch-bot/broadcaster"
+	"strings"
 )
 
 type Bot struct {
@@ -28,14 +31,34 @@ func New(sugar *zap.SugaredLogger) *Bot {
 	bot := Bot{sugar: sugar, session: session, broadcaster: bc}
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		if i.Type != discordgo.InteractionApplicationCommand {
-			return
+		switch i.Type {
+		case discordgo.InteractionApplicationCommand:
+			if h, ok := commandsHandlers[i.ApplicationCommandData().Name]; ok {
+				h(&bot, i)
+			}
+		case discordgo.InteractionMessageComponent:
+			customID := i.MessageComponentData().CustomID
+			if strings.HasPrefix(customID, "stop_") {
+				streamIdStr := strings.TrimPrefix(customID, "stop_")
+				streamId, err := strconv.ParseInt(streamIdStr, 10, 64)
+				if err != nil {
+					bot.sugar.Debugw("Failed to parse customID", "err", err)
+					return
+				}
+
+				a, ok := bot.broadcaster.Agents()[streamId]
+				if !ok {
+					bot.sugar.Debugw("Agent not found", "streamId", streamId)
+					return
+				}
+
+				a.Close(broadcaster.ReasonForceStopped(), "")
+			}
+			//if h, ok := componentsHandlers[i.MessageComponentData().CustomID]; ok {
+			//	h(&bot, i)
+			//}
 		}
 
-		data := i.ApplicationCommandData()
-		if data.Name == commandName {
-			bot.handleStreamCatch(i, parseOptions(data.Options))
-		}
 	})
 
 	session.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
@@ -99,18 +122,34 @@ func (sl StreamListener) Status(stream *broadcaster.Stream, status broadcaster.S
 	var err error
 	switch status {
 	case broadcaster.StreamStarted:
-		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream started")
+		content := "Stream started"
+		_, err = sl.bot.session.InteractionResponseEdit(sl.interaction, &discordgo.WebhookEdit{
+			Content: &content,
+			Components: &[]discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.Button{
+							Label:    "Stop",
+							Style:    discordgo.DangerButton,
+							CustomID: fmt.Sprintf("stop_%d", stream.Id),
+						},
+					},
+				},
+			},
+		})
 	case broadcaster.GoneLive:
 		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream gone live")
 	case broadcaster.Ended:
 		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream ended")
 	case broadcaster.Timeout:
 		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream timeout")
+	case broadcaster.ForceStopped:
+		break
 	default:
 		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Unhandled")
 	}
 	if err != nil {
-		sl.bot.sugar.Errorf("could not send status to discord: %s", err)
+		sl.bot.sugar.Errorf("could not send status to discord: %w", err)
 	}
 }
 func (bot *Bot) NewStreamListener(i *discordgo.Interaction) *StreamListener {
@@ -134,11 +173,11 @@ func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap
 	bot.respondInteractionMessage(i.Interaction, "Please wait...")
 }
 
-const commandName = "streamcatch"
+const streamcatchCommandName = "streamcatch"
 
 var commands = []*discordgo.ApplicationCommand{
 	{
-		Name:        commandName,
+		Name:        streamcatchCommandName,
 		Description: "Catch a stream the moment it comes online",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
@@ -150,3 +189,21 @@ var commands = []*discordgo.ApplicationCommand{
 		},
 	},
 }
+
+var (
+	//componentsHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate){
+	//	"stop": func(bot *Bot, i *discordgo.InteractionCreate) {
+	//		a, ok := bot.broadcaster.Agents()[*streamId]
+	//		if !ok {
+	//			http.Error(w, "agent not found", 404)
+	//			return
+	//		}
+	//	},
+	//}
+	commandsHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate){
+		streamcatchCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
+			data := i.ApplicationCommandData()
+			bot.handleStreamCatch(i, parseOptions(data.Options))
+		},
+	}
+)
