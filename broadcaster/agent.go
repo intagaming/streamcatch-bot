@@ -131,18 +131,12 @@ func (a *Agent) Run() {
 
 	// Now that stream came online, start streaming
 
-	// Save into db that the stream gone online, and set timeout for the stream
+	// Set stream gone online, and set timeout for the stream
 	if !a.stream.GoneOnline {
 		a.sugar.Debugw("Stream gone online", "streamId", a.stream.Id)
 
 		a.stream.ScheduledEndAt = time.Now().Add(LiveDuration)
 		a.stream.GoneOnline = true
-		// TODO:
-		//_, err := b.db.Exec("UPDATE stream SET gone_online = 1, scheduled_end_at = ? WHERE id = ?",
-		//	a.stream.ScheduledEndAt.Unix(), a.stream.Id)
-		//if err != nil {
-		//	a.sugar.Panicw("Failed to update stream", "streamId", a.stream.Id, "error", err)
-		//}
 
 		a.stream.Listener.Status(a.stream, GoneLive)
 	}
