@@ -210,12 +210,12 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 		dummyFfmpegCmd.SetStderr(&dummyFfmpegCombinedBuf)
 		err := dummyFfmpegCmd.Start()
 		if err != nil {
-			a.Close(ReasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
+			a.Close(ReasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
 			return
 		}
 		err = dummyFfmpegCmd.Wait()
 		if err != nil {
-			a.Close(ReasonErrored, fmt.Sprintf("failed to wait for dummy stream ffmpeg cmd: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
+			a.Close(ReasonErrored, fmt.Sprintf("failed to wait for dummy stream ffmpeg cmd: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
 			return
 		}
 
@@ -223,7 +223,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 			return
 		}
 
-		a.Close(ReasonErrored, fmt.Sprintf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf))
+		a.Close(ReasonErrored, fmt.Sprintf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf.String()))
 		return
 	}()
 }
