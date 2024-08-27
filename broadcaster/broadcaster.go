@@ -42,6 +42,7 @@ type Config struct {
 	MediaServerApiUrl             string
 	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder
+	StreamAvailableChecker        func(streamId int64) (bool, error)
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {

@@ -2,8 +2,10 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
+	"net/http"
 	"os"
 	"strconv"
 	"streamcatch-bot/broadcaster"
@@ -65,6 +67,16 @@ func New(sugar *zap.SugaredLogger) *Bot {
 		MediaServerApiUrl:             mediaServerApiUrl,
 		FfmpegCmderCreator:            broadcaster.NewRealFfmpegCmder,
 		DummyStreamFfmpegCmderCreator: broadcaster.NewRealDummyStreamFfmpegCmder,
+		StreamAvailableChecker: func(streamId int64) (bool, error) {
+			resp, err := http.Get(mediaServerApiUrl + "/v3/paths/get/" + strconv.FormatInt(streamId, 10))
+			if err != nil {
+				return false, err
+			}
+			if resp.StatusCode != http.StatusOK {
+				return false, errors.New("response was not 200 but " + resp.Status)
+			}
+			return true, nil
+		},
 	})
 
 	mediaServerHlsUrl := os.Getenv("MEDIA_SERVER_HLS_URL")

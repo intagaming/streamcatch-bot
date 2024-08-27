@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,10 +20,11 @@ const (
 )
 
 var (
-	ReasonNormal       = errors.New("normal close")
-	ReasonTimeout      = errors.New("timeout")
-	ReasonErrored      = errors.New("errored")
-	ReasonForceStopped = errors.New("force stopped")
+	ReasonNormal            = errors.New("normal close")
+	ReasonTimeout           = errors.New("timeout")
+	ReasonErrored           = errors.New("errored")
+	ReasonForceStopped      = errors.New("force stopped")
+	StreamNotAvailableError = errors.New("stream not available")
 )
 
 type Agent struct {
@@ -92,13 +91,12 @@ func (a *Agent) Run() {
 
 	go func() {
 		try := func() error {
-			// TODO: abstract away
-			resp, err := http.Get(b.config.MediaServerApiUrl + "/v3/paths/get/" + strconv.FormatInt(a.stream.Id, 10))
+			available, err := b.config.StreamAvailableChecker(a.stream.Id)
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode != http.StatusOK {
-				return errors.New("response was not 200 but " + resp.Status)
+			if !available {
+				return StreamNotAvailableError
 			}
 			return nil
 		}
