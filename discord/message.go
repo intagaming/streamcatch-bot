@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster"
-	"strings"
 )
 
 type StreamMessageContent struct {
@@ -15,23 +14,21 @@ type StreamMessageContent struct {
 }
 
 func (bot *Bot) MakeStreamEndedMessage(url string, reason error) *StreamMessageContent {
-	var contentBuilder strings.Builder
-	contentBuilder.WriteString(fmt.Sprintf("URL: **`%s`**\n", url))
+	var desc string
 	switch {
 	// TODO: show if the streamer never went online
 	case errors.Is(reason, broadcaster.ReasonNormal):
 	case errors.Is(reason, broadcaster.ReasonTimeout):
-		contentBuilder.WriteString("The stream had ended.")
+		desc = "The stream had ended."
 	case errors.Is(reason, broadcaster.ReasonForceStopped):
-		contentBuilder.WriteString("The stream catch has been stopped.")
+		desc = "The stream catch has been stopped."
 	case errors.Is(reason, broadcaster.ReasonErrored):
-		contentBuilder.WriteString("An error has occurred.")
+		desc = "An error has occurred."
 	default:
-		contentBuilder.WriteString("The stream catch was stopped for unknown reason.")
+		desc = "The stream catch was stopped for unknown reason."
 	}
 
 	return &StreamMessageContent{
-		Content: contentBuilder.String(),
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
@@ -40,6 +37,23 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason error) *StreamMessageC
 						Style:    discordgo.SecondaryButton,
 						CustomID: fmt.Sprintf("recatch_%s", url),
 					},
+				},
+			},
+		},
+		Embeds: []*discordgo.MessageEmbed{
+			{
+				Title:       "StreamCatch",
+				Description: desc,
+				Fields: []*discordgo.MessageEmbedField{
+					{
+						Name:  "Stream URL",
+						Value: url,
+					},
+					{
+						Name:  "Status",
+						Value: "🔴 Ended",
+					},
+					// TODO: expiration time
 				},
 			},
 		},
@@ -102,6 +116,40 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
 						CustomID: fmt.Sprintf("stop_%d", streamId),
+					},
+				},
+			},
+		},
+		Embeds: []*discordgo.MessageEmbed{
+			{
+				Title:       "StreamCatch",
+				Description: "Streamer went online, watch now!",
+				URL:         link,
+				Fields: []*discordgo.MessageEmbedField{
+					{
+						Name:  "Stream URL",
+						Value: url,
+					},
+					{
+						Name:  "Status",
+						Value: "🟢 Online",
+					},
+				},
+			},
+		},
+	}
+}
+
+func (bot *Bot) MakeRequestReceivedMessage(url string) *StreamMessageContent {
+	return &StreamMessageContent{
+		Embeds: []*discordgo.MessageEmbed{
+			{
+				Title:       "StreamCatch",
+				Description: "Request to catch is received. Stay tuned for a followup!",
+				Fields: []*discordgo.MessageEmbedField{
+					{
+						Name:  "Stream URL",
+						Value: url,
 					},
 				},
 			},

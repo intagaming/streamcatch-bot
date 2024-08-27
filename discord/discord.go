@@ -79,13 +79,8 @@ func New(sugar *zap.SugaredLogger) *Bot {
 
 				a.Close(broadcaster.ReasonForceStopped, "")
 
-				msg := bot.MakeStreamEndedMessage(a.StreamUrl(), broadcaster.ReasonForceStopped)
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseUpdateMessage,
-					Data: &discordgo.InteractionResponseData{
-						Content:    msg.Content,
-						Components: msg.Components,
-					},
+					Type: discordgo.InteractionResponseDeferredMessageUpdate,
 				})
 				if err != nil {
 					bot.sugar.Errorw("Failed to respond to interaction", "err", err)
@@ -129,19 +124,6 @@ func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) 
 	return
 }
 
-func (bot *Bot) respondInteractionMessage(i *discordgo.Interaction, message string) {
-	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: message,
-		},
-	})
-
-	if err != nil {
-		bot.sugar.Panicf("could not respond to interaction: %s", err)
-	}
-}
-
 func (bot *Bot) EditMessage(channelId string, messageId string, message string) {
 	_, err := bot.session.ChannelMessageEdit(channelId, messageId, message)
 
@@ -159,14 +141,33 @@ func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap
 	stream, err := broadcaster.MakeStream(ctx, url, sl)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
-		bot.respondInteractionMessage(i.Interaction, "Failed to create stream.")
+		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Failed to create stream.",
+			},
+		})
+		if err != nil {
+			bot.sugar.Panicf("could not respond to interaction: %s", err)
+		}
 		return
 	}
 	sl.Register(stream.Id)
 
 	bot.broadcaster.HandleStream(stream)
 
-	bot.respondInteractionMessage(i.Interaction, "Please wait...")
+	msg := bot.MakeRequestReceivedMessage(url)
+	err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content:    msg.Content,
+			Components: msg.Components,
+			Embeds:     msg.Embeds,
+		},
+	})
+	if err != nil {
+		bot.sugar.Errorw("could not respond to interaction", "err", err)
+	}
 }
 
 const streamcatchCommandName = "streamcatch"

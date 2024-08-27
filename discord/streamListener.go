@@ -12,6 +12,7 @@ var (
 type StreamListener struct {
 	bot         *Bot
 	interaction *discordgo.Interaction
+	message     *discordgo.Message
 }
 
 func (sl *StreamListener) Register(streamId int64) {
@@ -19,22 +20,30 @@ func (sl *StreamListener) Register(streamId int64) {
 }
 
 func (sl *StreamListener) Status(stream *broadcaster.Stream, status broadcaster.StreamStatus) {
-	var err error
 	switch status {
 	case broadcaster.StreamStarted:
-		msg := sl.bot.MakeStreamStartedMessage(stream.Url, stream.Id)
-		_, err = sl.bot.session.InteractionResponseEdit(sl.interaction, &discordgo.WebhookEdit{
-			Content:    &msg.Content,
-			Components: &msg.Components,
-			Embeds:     &msg.Embeds,
+		streamStartedMessage := sl.bot.MakeStreamStartedMessage(stream.Url, stream.Id)
+		msg, err := sl.bot.session.FollowupMessageCreate(sl.interaction, true, &discordgo.WebhookParams{
+			Content:    streamStartedMessage.Content,
+			Components: streamStartedMessage.Components,
+			Embeds:     streamStartedMessage.Embeds,
 		})
+		if err != nil {
+			sl.bot.sugar.Errorw("could not send status to discord", "err", err)
+		}
+		sl.message = msg
 	case broadcaster.GoneLive:
 		msg := sl.bot.MakeStreamGoneLiveMessage(stream.Url, stream.Id)
-		_, err = sl.bot.session.InteractionResponseEdit(sl.interaction, &discordgo.WebhookEdit{
+		_, err := sl.bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
+			ID:         sl.message.ID,
+			Channel:    sl.message.ChannelID,
 			Content:    &msg.Content,
 			Components: &msg.Components,
 			Embeds:     &msg.Embeds,
 		})
+		if err != nil {
+			sl.bot.sugar.Errorw("could not send status to discord", "err", err)
+		}
 	case broadcaster.Ended:
 		// Message sent via StreamListener.Close()
 		delete(streamToStreamListener, stream.Id)
@@ -43,18 +52,22 @@ func (sl *StreamListener) Status(stream *broadcaster.Stream, status broadcaster.
 		// Message sent via StreamListener.Close()
 		break
 	default:
-		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Unhandled")
-	}
-	if err != nil {
-		sl.bot.sugar.Errorw("could not send status to discord", "err", err)
+		sl.bot.sugar.Debugw("unhandled status", "status", status)
 	}
 }
 
 func (sl *StreamListener) Close(stream *broadcaster.Stream, reason error) {
+	sl.bot.sugar.Infof("Close!!")
 	msg := sl.bot.MakeStreamEndedMessage(stream.Url, reason)
-	_, err := sl.bot.session.ChannelMessageSendComplex(sl.interaction.ChannelID, &discordgo.MessageSend{
-		Content:    msg.Content,
-		Components: msg.Components,
+	if sl.message == nil {
+		return
+	}
+	_, err := sl.bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
+		ID:         sl.message.ID,
+		Channel:    sl.message.ChannelID,
+		Content:    &msg.Content,
+		Components: &msg.Components,
+		Embeds:     &msg.Embeds,
 	})
 	if err != nil {
 		sl.bot.sugar.Errorw("could not send status to discord", "err", err)
