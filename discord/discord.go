@@ -2,7 +2,6 @@ package discord
 
 import (
 	"context"
-	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"os"
@@ -12,9 +11,10 @@ import (
 )
 
 type Bot struct {
-	sugar       *zap.SugaredLogger
-	session     *discordgo.Session
-	broadcaster *broadcaster.Broadcaster
+	sugar             *zap.SugaredLogger
+	session           *discordgo.Session
+	broadcaster       *broadcaster.Broadcaster
+	mediaServerHlsUrl string
 }
 
 func New(sugar *zap.SugaredLogger) *Bot {
@@ -28,7 +28,12 @@ func New(sugar *zap.SugaredLogger) *Bot {
 
 	bc := broadcaster.New(sugar)
 
-	bot := Bot{sugar: sugar, session: session, broadcaster: bc}
+	mediaServerHlsUrl := os.Getenv("MEDIA_SERVER_HLS_URL")
+	if mediaServerHlsUrl == "" {
+		sugar.Panic("MEDIA_SERVER_HLS_URL is not set")
+	}
+
+	bot := Bot{sugar: sugar, session: session, broadcaster: bc, mediaServerHlsUrl: mediaServerHlsUrl}
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		switch i.Type {
@@ -43,16 +48,48 @@ func New(sugar *zap.SugaredLogger) *Bot {
 				streamId, err := strconv.ParseInt(streamIdStr, 10, 64)
 				if err != nil {
 					bot.sugar.Debugw("Failed to parse customID", "err", err)
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "An error occurred.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+					}
 					return
 				}
 
 				a, ok := bot.broadcaster.Agents()[streamId]
 				if !ok {
 					bot.sugar.Debugw("Agent not found", "streamId", streamId)
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "The stream is not available anymore.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+					}
 					return
 				}
 
-				a.Close(broadcaster.ReasonForceStopped(), "")
+				a.Close(broadcaster.ReasonForceStopped, "")
+
+				msg := bot.MakeStreamEndedMessage(a.StreamUrl(), broadcaster.ReasonForceStopped)
+				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseUpdateMessage,
+					Data: &discordgo.InteractionResponseData{
+						Content:    msg.Content,
+						Components: msg.Components,
+					},
+				})
+				if err != nil {
+					bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+				}
 			}
 			//if h, ok := componentsHandlers[i.MessageComponentData().CustomID]; ok {
 			//	h(&bot, i)
@@ -113,60 +150,19 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 	}
 }
 
-type StreamListener struct {
-	bot         *Bot
-	interaction *discordgo.Interaction
-}
-
-func (sl StreamListener) Status(stream *broadcaster.Stream, status broadcaster.StreamStatus) {
-	var err error
-	switch status {
-	case broadcaster.StreamStarted:
-		content := "Stream started"
-		_, err = sl.bot.session.InteractionResponseEdit(sl.interaction, &discordgo.WebhookEdit{
-			Content: &content,
-			Components: &[]discordgo.MessageComponent{
-				discordgo.ActionsRow{
-					Components: []discordgo.MessageComponent{
-						discordgo.Button{
-							Label:    "Stop",
-							Style:    discordgo.DangerButton,
-							CustomID: fmt.Sprintf("stop_%d", stream.Id),
-						},
-					},
-				},
-			},
-		})
-	case broadcaster.GoneLive:
-		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream gone live")
-	case broadcaster.Ended:
-		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream ended")
-	case broadcaster.Timeout:
-		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Stream timeout")
-	case broadcaster.ForceStopped:
-		break
-	default:
-		_, err = sl.bot.session.ChannelMessageSend(sl.interaction.ChannelID, "Unhandled")
-	}
-	if err != nil {
-		sl.bot.sugar.Errorf("could not send status to discord: %w", err)
-	}
-}
-func (bot *Bot) NewStreamListener(i *discordgo.Interaction) *StreamListener {
-	return &StreamListener{bot: bot, interaction: i}
-}
-
 func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap) {
 	url := opts["url"].StringValue()
 
 	// TODO: real interrupt context
 	ctx := context.Background()
-	stream, err := broadcaster.MakeStream(ctx, url, bot.NewStreamListener(i.Interaction))
+	sl := bot.NewStreamListener(i.Interaction)
+	stream, err := broadcaster.MakeStream(ctx, url, sl)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
 		bot.respondInteractionMessage(i.Interaction, "Failed to create stream.")
 		return
 	}
+	sl.Register(stream.Id)
 
 	bot.broadcaster.HandleStream(stream)
 

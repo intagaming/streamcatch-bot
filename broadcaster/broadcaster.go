@@ -121,6 +121,7 @@ const (
 
 type StreamStatusListener interface {
 	Status(stream *Stream, status StreamStatus)
+	Close(stream *Stream, reason error)
 }
 
 var (

@@ -23,15 +23,11 @@ const (
 )
 
 var (
-	reasonNormal       = errors.New("normal close")
-	reasonTimeout      = errors.New("timeout")
-	reasonErrored      = errors.New("errored")
-	reasonForceStopped = errors.New("force stopped")
+	ReasonNormal       = errors.New("normal close")
+	ReasonTimeout      = errors.New("timeout")
+	ReasonErrored      = errors.New("errored")
+	ReasonForceStopped = errors.New("force stopped")
 )
-
-func ReasonForceStopped() error {
-	return reasonForceStopped
-}
 
 type Agent struct {
 	sugar         *zap.SugaredLogger
@@ -61,6 +57,9 @@ func (a *Agent) StreamStarted() bool {
 }
 func (a *Agent) RedirectUrl() string {
 	return a.redirectUrl
+}
+func (a *Agent) StreamUrl() string {
+	return a.stream.Url
 }
 
 func (a *Agent) Run() {
@@ -143,7 +142,7 @@ func (a *Agent) Run() {
 		return
 	}
 	if waitError != nil {
-		a.Close(reasonErrored, fmt.Sprintf("Failed to wait for stream to online: %v", waitError))
+		a.Close(ReasonErrored, fmt.Sprintf("Failed to wait for stream to online: %v", waitError))
 		return
 	}
 
@@ -218,10 +217,10 @@ func (a *Agent) Run() {
 					a.sugar.Panicw("Failed to marshal error", "streamId", a.stream.Id, "error", err)
 				}
 				a.sugar.Debugw("Stream terminated", "streamId", a.stream.Id, "error", string(errorStr))
-				a.Close(reasonErrored, string(errorStr))
+				a.Close(ReasonErrored, string(errorStr))
 			}
 
-			a.Close(reasonNormal, "")
+			a.Close(ReasonNormal, "")
 			return
 		}
 	}
@@ -251,10 +250,11 @@ func (a *Agent) Close(reason error, error string) {
 	//	}
 	//}
 
-	if errors.Is(reason, reasonForceStopped) {
+	if errors.Is(reason, ReasonForceStopped) {
 		a.stream.Listener.Status(a.stream, ForceStopped)
 	}
 	a.stream.Listener.Status(a.stream, Ended)
+	a.stream.Listener.Close(a.stream, reason)
 
 	a.sugar.Debugw("Agent closed", "streamId", a.stream.Id, "reason", reason, "error", error)
 }
@@ -276,12 +276,12 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 		dummyFfmpegCmd.Stderr = &dummyFfmpegCombinedBuf
 		err := dummyFfmpegCmd.Start()
 		if err != nil {
-			a.Close(reasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
+			a.Close(ReasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
 			return
 		}
 		err = dummyFfmpegCmd.Wait()
 		if err != nil {
-			a.Close(reasonErrored, fmt.Sprintf("failed to wait for dummy stream ffmpeg cmd: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
+			a.Close(ReasonErrored, fmt.Sprintf("failed to wait for dummy stream ffmpeg cmd: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))
 			return
 		}
 
@@ -289,7 +289,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 			return
 		}
 
-		a.Close(reasonErrored, fmt.Sprintf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf))
+		a.Close(ReasonErrored, fmt.Sprintf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf))
 		return
 	}()
 }
@@ -318,12 +318,12 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 				streamerFfmpegCmd.Stderr = &streamerFfmpegErrBuf
 				err := streamerFfmpegCmd.Start()
 				if err != nil {
-					a.Close(reasonErrored, fmt.Sprintf("failed to start ffmpeg cmd: %v", err))
+					a.Close(ReasonErrored, fmt.Sprintf("failed to start ffmpeg cmd: %v", err))
 					return
 				}
 				err = streamerFfmpegCmd.Wait()
 				if err != nil {
-					a.Close(reasonErrored, fmt.Sprintf("failed to wait for ffmpeg cmd: %v", err))
+					a.Close(ReasonErrored, fmt.Sprintf("failed to wait for ffmpeg cmd: %v", err))
 					return
 				}
 
@@ -337,7 +337,7 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 					continue
 				}
 
-				a.Close(reasonErrored, fmt.Sprintf("stream ffmpeg failed: %v", streamerFfmpegErrBuf.String()))
+				a.Close(ReasonErrored, fmt.Sprintf("stream ffmpeg failed: %v", streamerFfmpegErrBuf.String()))
 				return
 			}
 		}
@@ -350,7 +350,7 @@ func (a *Agent) checkTimeout() {
 
 		a.stream.Listener.Status(a.stream, Timeout)
 
-		a.Close(reasonTimeout, "")
+		a.Close(ReasonTimeout, "")
 
 	}
 }
