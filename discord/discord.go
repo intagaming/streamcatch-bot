@@ -1,11 +1,14 @@
 package discord
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/bwmarrin/discordgo"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -96,6 +99,40 @@ func New(sugar *zap.SugaredLogger) *Bot {
 		},
 		StreamWaiter: func(agent *broadcaster.Agent) error {
 			return broadcaster.NewRealStreamWaiter(sugar, helixClient, agent)
+		},
+		Streamer: func(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter) error {
+			var streamlinkErrBuf bytes.Buffer
+			var ffmpegErrBuf bytes.Buffer
+
+			if stream.Platform == "twitch" {
+				broadcaster.StreamFromTwitch(ctx, sugar, stream, twitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+			} else if stream.Platform == "youtube" {
+				broadcaster.StreamFromYoutube(ctx, sugar, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+			} else if stream.Platform == "generic" {
+				broadcaster.StreamGeneric(ctx, sugar, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+			} else {
+				//a.sugar.Panicw("Unknown platform", "streamId", a.stream.Id, "platform", a.stream.Platform)
+				return errors.New("Unknown platform: " + stream.Platform)
+			}
+			if ctx.Err() != nil {
+				return nil
+			}
+
+			if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {
+				errorStr, err := json.Marshal(struct {
+					StreamlinkError string `json:"streamlink_error,omitempty"`
+					FfmpegError     string `json:"ffmpeg_error,omitempty"`
+				}{
+					StreamlinkError: streamlinkErrBuf.String(),
+					FfmpegError:     ffmpegErrBuf.String(),
+				})
+				if err != nil {
+					sugar.Panicw("Failed to marshal error", "streamId", stream.Id, "error", err)
+				}
+				return errors.New("stream terminated with error: " + string(errorStr))
+			}
+
+			return nil
 		},
 	})
 

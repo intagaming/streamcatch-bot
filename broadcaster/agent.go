@@ -3,7 +3,6 @@ package broadcaster
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -158,22 +157,7 @@ func (a *Agent) Run() {
 		case <-ticker.C:
 			retryStartTime := time.Now()
 
-			var streamlinkErrBuf bytes.Buffer
-			var ffmpegErrBuf bytes.Buffer
-
-			// TODO: abstract away
-			if a.stream.Platform == "twitch" {
-				a.StreamFromTwitch(pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-			} else if a.stream.Platform == "youtube" {
-				a.StreamFromYoutube(pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-			} else if a.stream.Platform == "generic" {
-				a.StreamGeneric(pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-			} else {
-				a.sugar.Panicw("Unknown platform", "streamId", a.stream.Id, "platform", a.stream.Platform)
-			}
-			if a.ctx.Err() != nil {
-				return
-			}
+			streamErr := b.config.Streamer(a.ctx, a.stream, pipeWrite)
 
 			retryEndTime := time.Now()
 
@@ -183,19 +167,9 @@ func (a *Agent) Run() {
 				continue
 			}
 
-			if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {
-				errorStr, err := json.Marshal(struct {
-					StreamlinkError string `json:"streamlink_error,omitempty"`
-					FfmpegError     string `json:"ffmpeg_error,omitempty"`
-				}{
-					StreamlinkError: streamlinkErrBuf.String(),
-					FfmpegError:     ffmpegErrBuf.String(),
-				})
-				if err != nil {
-					a.sugar.Panicw("Failed to marshal error", "streamId", a.stream.Id, "error", err)
-				}
-				a.sugar.Debugw("Stream terminated", "streamId", a.stream.Id, "error", string(errorStr))
-				a.Close(ReasonErrored, string(errorStr))
+			if streamErr != nil {
+				a.sugar.Debugw("Stream terminated", "streamId", a.stream.Id, "error", streamErr)
+				a.Close(ReasonErrored, streamErr.Error())
 			}
 
 			a.Close(ReasonNormal, "")

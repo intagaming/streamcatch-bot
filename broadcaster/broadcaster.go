@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ type Config struct {
 	StreamAvailableChecker        func(streamId int64) (bool, error)
 	StreamWaiter                  func(agent *Agent) error
 	Helix                         *helix.Client
+	Streamer                      func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {

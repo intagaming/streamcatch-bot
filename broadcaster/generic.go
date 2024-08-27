@@ -47,17 +47,17 @@ func WaitForGenericOnline(sugar *zap.SugaredLogger, ctx context.Context, stream 
 	}
 }
 
-func (a *Agent) StreamGeneric(pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) {
-	streamlinkCmd := exec.CommandContext(a.ctx, "streamlink", a.stream.Url, "720p60,720p,480p,360p",
+func StreamGeneric(ctx context.Context, sugar *zap.SugaredLogger, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) {
+	streamlinkCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "720p60,720p,480p,360p",
 		"--loglevel", "warning", "--stdout")
 	streamlinkCmd.Stderr = streamlinkErrBuf
 
-	ffmpegCmd := exec.CommandContext(a.ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	ffmpegCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
 		"-re", "-i", "pipe:", "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "-")
 
 	pipe, err := streamlinkCmd.StdoutPipe()
 	if err != nil {
-		a.sugar.Panicw("Failed to create streamlink stdout pipe", "url", a.stream.Url, "error", err)
+		sugar.Panicw("Failed to create streamlink stdout pipe", "url", stream.Url, "error", err)
 	}
 	ffmpegCmd.Stdin = pipe
 

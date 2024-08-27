@@ -52,22 +52,20 @@ func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixCli
 	}
 }
 
-func (a *Agent) StreamFromTwitch(pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) {
-	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
-
-	args := []string{a.stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
-	if b.config.TwitchAuthToken != "" {
-		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", b.config.TwitchAuthToken))
+func StreamFromTwitch(ctx context.Context, sugar *zap.SugaredLogger, stream *Stream, twitchAuthToken string, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) {
+	args := []string{stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
+	if twitchAuthToken != "" {
+		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", twitchAuthToken))
 	}
-	streamlinkCmd := exec.CommandContext(a.ctx, "streamlink", args...)
+	streamlinkCmd := exec.CommandContext(ctx, "streamlink", args...)
 	streamlinkCmd.Stderr = streamlinkErrBuf
 
-	ffmpegCmd := exec.CommandContext(a.ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	ffmpegCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
 		"-re", "-i", "pipe:", "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "-")
 
 	pipe, err := streamlinkCmd.StdoutPipe()
 	if err != nil {
-		a.sugar.Panicw("Failed to create streamlink stdout pipe", "url", a.stream.Url, "error", err)
+		sugar.Panicw("Failed to create streamlink stdout pipe", "url", stream.Url, "error", err)
 	}
 	ffmpegCmd.Stdin = pipe
 
@@ -76,21 +74,21 @@ func (a *Agent) StreamFromTwitch(pipeWrite *io.PipeWriter, streamlinkErrBuf *byt
 
 	err = streamlinkCmd.Start()
 	if err != nil {
-		a.sugar.Panicw("Failed to start streamlink ", "url", a.stream.Url, "error", err)
+		sugar.Panicw("Failed to start streamlink ", "url", stream.Url, "error", err)
 	}
 	err = ffmpegCmd.Start()
 	if err != nil {
-		a.sugar.Panicw("Failed to start ffmpeg ", "url", a.stream.Url, "error", err)
+		sugar.Panicw("Failed to start ffmpeg ", "url", stream.Url, "error", err)
 	}
 
 	err = ffmpegCmd.Wait()
 	if err != nil {
-		a.sugar.Panicw("Failed to wait ffmpeg ", "url", a.stream.Url, "error", err)
+		sugar.Panicw("Failed to wait ffmpeg ", "url", stream.Url, "error", err)
 	}
 	if streamlinkCmd.ProcessState == nil {
 		err := streamlinkCmd.Process.Kill()
 		if err != nil {
-			a.sugar.Panicw("Failed to kill streamlink ", "url", a.stream.Url, "error", err)
+			sugar.Panicw("Failed to kill streamlink ", "url", stream.Url, "error", err)
 		}
 	}
 }
