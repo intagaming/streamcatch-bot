@@ -14,6 +14,11 @@ import (
 	"strconv"
 	"streamcatch-bot/broadcaster"
 	"strings"
+	"time"
+)
+
+var (
+	ExtendDuration = 10 * time.Minute
 )
 
 type Bot struct {
@@ -193,6 +198,81 @@ func New(sugar *zap.SugaredLogger) *Bot {
 				if err != nil {
 					bot.sugar.Errorw("Failed to respond to interaction", "err", err)
 				}
+				return
+			}
+			if strings.HasPrefix(customID, "refresh_") {
+				streamIdStr := strings.TrimPrefix(customID, "refresh_")
+				streamId, err := strconv.ParseInt(streamIdStr, 10, 64)
+				if err != nil {
+					bot.sugar.Debugw("Failed to parse customID", "err", err)
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "An error occurred.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+					}
+					return
+				}
+
+				a, ok := bot.broadcaster.Agents()[streamId]
+				if !ok {
+					bot.sugar.Debugw("Agent not found", "streamId", streamId)
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "The stream is not available anymore.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+					}
+					return
+				}
+
+				newScheduledEndAt := time.Now().Add(ExtendDuration)
+				if a.ScheduledEndAt().After(newScheduledEndAt) {
+					newScheduledEndAt = a.ScheduledEndAt()
+				}
+
+				err = bot.broadcaster.RefreshAgent(streamId, newScheduledEndAt)
+				if err != nil {
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "An error occurred",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+					}
+					return
+				}
+
+				streamStartedMessage := bot.MakeStreamStartedMessage(a.StreamUrl(), streamId, newScheduledEndAt)
+				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseUpdateMessage,
+					Data: &discordgo.InteractionResponseData{
+						Content:    streamStartedMessage.Content,
+						Components: streamStartedMessage.Components,
+						Embeds:     streamStartedMessage.Embeds,
+					},
+				})
+				if err != nil {
+					bot.sugar.Errorw("could not update interaction", "err", err)
+				}
+				return
+			}
+			if strings.HasPrefix(customID, "recatch_") {
+				streamUrl := strings.TrimPrefix(customID, "recatch_")
+				bot.newStreamCatch(i.Interaction, streamUrl)
+
+				return
 			}
 			//if h, ok := componentsHandlers[i.MessageComponentData().CustomID]; ok {
 			//	h(&bot, i)
@@ -240,19 +320,18 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 	}
 }
 
-func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap) {
-	url := opts["url"].StringValue()
-
+func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
 	// TODO: real interrupt context
 	ctx := context.Background()
-	sl := bot.NewStreamListener(i.Interaction)
+	sl := bot.NewStreamListener(i)
 	stream, err := broadcaster.MakeStream(ctx, url, sl)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
-		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: "Failed to create stream.",
+				Flags:   discordgo.MessageFlagsEphemeral,
 			},
 		})
 		if err != nil {
@@ -265,17 +344,24 @@ func (bot *Bot) handleStreamCatch(i *discordgo.InteractionCreate, opts optionMap
 	bot.broadcaster.HandleStream(stream)
 
 	msg := bot.MakeRequestReceivedMessage(url)
-	err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	err = bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content:    msg.Content,
 			Components: msg.Components,
 			Embeds:     msg.Embeds,
+			Flags:      discordgo.MessageFlagsEphemeral,
 		},
 	})
 	if err != nil {
 		bot.sugar.Errorw("could not respond to interaction", "err", err)
 	}
+}
+
+func (bot *Bot) handleStreamCatchCmd(i *discordgo.InteractionCreate, opts optionMap) {
+	url := opts["url"].StringValue()
+
+	bot.newStreamCatch(i.Interaction, url)
 }
 
 const streamcatchCommandName = "streamcatch"
@@ -308,7 +394,7 @@ var (
 	commandsHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate){
 		streamcatchCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
 			data := i.ApplicationCommandData()
-			bot.handleStreamCatch(i, parseOptions(data.Options))
+			bot.handleStreamCatchCmd(i, parseOptions(data.Options))
 		},
 	}
 )

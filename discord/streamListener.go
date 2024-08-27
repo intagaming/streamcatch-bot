@@ -22,7 +22,7 @@ func (sl *StreamListener) Register(streamId int64) {
 func (sl *StreamListener) Status(stream *broadcaster.Stream, status broadcaster.StreamStatus) {
 	switch status {
 	case broadcaster.StreamStarted:
-		streamStartedMessage := sl.bot.MakeStreamStartedMessage(stream.Url, stream.Id)
+		streamStartedMessage := sl.bot.MakeStreamStartedMessage(stream.Url, stream.Id, stream.ScheduledEndAt)
 		msg, err := sl.bot.session.FollowupMessageCreate(sl.interaction, true, &discordgo.WebhookParams{
 			Content:    streamStartedMessage.Content,
 			Components: streamStartedMessage.Components,

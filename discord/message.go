@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster"
+	"time"
 )
 
 type StreamMessageContent struct {
@@ -29,17 +30,6 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason error) *StreamMessageC
 	}
 
 	return &StreamMessageContent{
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.Button{
-						Label:    "Re-catch",
-						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("recatch_%s", url),
-					},
-				},
-			},
-		},
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
@@ -57,12 +47,44 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason error) *StreamMessageC
 				},
 			},
 		},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label:    "Re-catch",
+						Style:    discordgo.SecondaryButton,
+						CustomID: fmt.Sprintf("recatch_%s", url),
+					},
+				},
+			},
+		},
 	}
 }
 
-func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64) *StreamMessageContent {
+func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEndAt time.Time) *StreamMessageContent {
 	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, streamId)
 	return &StreamMessageContent{
+		Embeds: []*discordgo.MessageEmbed{
+			{
+				Title:       "StreamCatch",
+				Description: "Ready to catch! Join now.",
+				URL:         link,
+				Fields: []*discordgo.MessageEmbedField{
+					{
+						Name:  "Stream URL",
+						Value: url,
+					},
+					{
+						Name:  "Status",
+						Value: "🟡 Waiting for stream to start",
+					},
+					{
+						Name:  "Catch until",
+						Value: scheduledEndAt.UTC().Format(time.RFC1123),
+					},
+				},
+			},
+		},
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
@@ -84,24 +106,6 @@ func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64) *StreamMess
 				},
 			},
 		},
-		Embeds: []*discordgo.MessageEmbed{
-			{
-				Title:       "StreamCatch",
-				Description: "Ready to catch! Join now.",
-				URL:         link,
-				Fields: []*discordgo.MessageEmbedField{
-					{
-						Name:  "Stream URL",
-						Value: url,
-					},
-					{
-						Name:  "Status",
-						Value: "🟡 Waiting for stream to start",
-					},
-					// TODO: expiration time
-				},
-			},
-		},
 	}
 }
 
@@ -109,17 +113,6 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, streamId)
 	return &StreamMessageContent{
 		Content: fmt.Sprintf("URL: _`%s`_\n**StreamCatch stream is ready!** [Click here to watch.](%s)\nStatus: 🟢 Online", url, link),
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.Button{
-						Label:    "Stop",
-						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%d", streamId),
-					},
-				},
-			},
-		},
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
@@ -133,6 +126,17 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 					{
 						Name:  "Status",
 						Value: "🟢 Online",
+					},
+				},
+			},
+		},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label:    "Stop",
+						Style:    discordgo.DangerButton,
+						CustomID: fmt.Sprintf("stop_%d", streamId),
 					},
 				},
 			},
