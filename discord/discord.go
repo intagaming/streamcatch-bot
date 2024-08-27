@@ -63,6 +63,7 @@ func New(sugar *zap.SugaredLogger) *Bot {
 		MediaServerPublishUser:     mediaServerPublishUser,
 		MediaServerPublishPassword: mediaServerPublishPassword,
 		MediaServerApiUrl:          mediaServerApiUrl,
+		FfmpegCmderCreator:         broadcaster.NewRealFfmpegCmder,
 	})
 
 	mediaServerHlsUrl := os.Getenv("MEDIA_SERVER_HLS_URL")

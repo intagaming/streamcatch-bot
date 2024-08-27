@@ -38,6 +38,7 @@ type Agent struct {
 	// The list of IPs watching the stream.
 	readIPs     []string
 	redirectUrl string
+	ffmpegCmder FfmpegCmder
 }
 
 func (a *Agent) ScheduledEndAt() time.Time {
@@ -298,9 +299,14 @@ func isMediaServersFault(stderr string) bool {
 	return strings.Contains(stderr, "Connection refused") || strings.Contains(stderr, "Broken pipe")
 }
 
-func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
-	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+type FfmpegCmder interface {
+	SetStdin(pipe io.Reader)
+	SetStderr(pipe io.Writer)
+	Start() error
+	Wait() error
+}
 
+func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 	streamerRetryTimer := time.NewTimer(3 * time.Second)
 	go func() {
 		for {
@@ -308,15 +314,10 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 			case <-a.ctx.Done():
 				break
 			case <-streamerRetryTimer.C:
-				// TODO: move this out
-				var streamerFfmpegCmd *exec.Cmd
-				streamerFfmpegCmd = exec.CommandContext(a.ctx, "ffmpeg", "-hide_banner",
-					"-loglevel", "error", "-re", "-i", "pipe:", "-c:v", "copy",
-					"-c:a", "aac", "-f", "rtsp",
-					fmt.Sprintf("rtsp://%s:%s@%s/%v", b.config.MediaServerPublishUser, b.config.MediaServerPublishPassword, b.config.MediaServerRtspHost, a.stream.Id))
+				streamerFfmpegCmd := a.ffmpegCmder
 				var streamerFfmpegErrBuf bytes.Buffer
-				streamerFfmpegCmd.Stdin = pipe
-				streamerFfmpegCmd.Stderr = &streamerFfmpegErrBuf
+				streamerFfmpegCmd.SetStdin(pipe)
+				streamerFfmpegCmd.SetStderr(&streamerFfmpegErrBuf)
 				err := streamerFfmpegCmd.Start()
 				if err != nil {
 					a.Close(ReasonErrored, fmt.Sprintf("failed to start ffmpeg cmd: %v", err))
