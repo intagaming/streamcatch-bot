@@ -2,8 +2,10 @@ package broadcaster
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"go.uber.org/zap"
 	"io"
 	"os/exec"
 	"strings"
@@ -16,30 +18,30 @@ type YoutubeStreamlinkInfo struct {
 	} `json:"metadata"`
 }
 
-func (a *Agent) WaitForYoutubeOnline() (*YoutubeStreamlinkInfo, error) {
+func WaitForYoutubeOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) (*YoutubeStreamlinkInfo, error) {
 	var youtubeStreamlinkInfo YoutubeStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-a.ctx.Done():
+		case <-ctx.Done():
 			return nil, nil
 		case <-ticker.C:
-			statusCheckCmd := exec.CommandContext(a.ctx, "streamlink", a.stream.Url, "-j")
+			statusCheckCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "-j")
 			output, _ := statusCheckCmd.CombinedOutput()
 			if strings.Contains(string(output), `"plugin": "youtube"`) {
 				if err := json.Unmarshal(output, &youtubeStreamlinkInfo); err != nil {
-					a.sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
+					sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
 				}
 				// Now online
-				a.sugar.Debugw("Detected youtube stream live", "id", a.stream.Id, "url", a.stream.Url)
+				sugar.Debugw("Detected youtube stream live", "id", stream.Id, "url", stream.Url)
 				return &youtubeStreamlinkInfo, nil
 			} else if strings.Contains(string(output), `No playable streams`) {
-				a.sugar.Debugw("Retrying getting stream", "id", a.stream.Id, "url", a.stream.Url)
+				sugar.Debugw("Retrying getting stream", "id", stream.Id, "url", stream.Url)
 				continue
 			} else {
-				a.sugar.Errorw("Doesn't recognize the output from the streamlink stream checking command", "output", string(output))
+				sugar.Errorw("Doesn't recognize the output from the streamlink stream checking command", "output", string(output))
 				return nil, errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
 			}
 		}

@@ -2,8 +2,10 @@ package broadcaster
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"net/url"
 	"os/exec"
@@ -13,9 +15,8 @@ import (
 	"github.com/nicklaw5/helix/v2"
 )
 
-func (a *Agent) WaitForTwitchOnline() error {
-	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
-	u, err := url.Parse(a.stream.Url)
+func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) error {
+	u, err := url.Parse(stream.Url)
 	if err != nil {
 		return errors.New("failed to parse url")
 	}
@@ -29,23 +30,23 @@ func (a *Agent) WaitForTwitchOnline() error {
 	defer ticker.Stop()
 	for {
 		select {
-		case <-a.ctx.Done():
+		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			streams, err := b.helix.GetStreams(&helix.StreamsParams{
+			streams, err := helixClient.GetStreams(&helix.StreamsParams{
 				UserLogins: []string{streamerName},
 			})
 			if err != nil {
-				a.sugar.Debugw("Failed to get streams. Retrying", "streamerName", streamerName, "error", err)
+				sugar.Debugw("Failed to get streams. Retrying", "streamerName", streamerName, "error", err)
 			}
 			if len(streams.Data.Streams) == 0 {
-				a.sugar.Debugw("Retrying getting stream", "streamerName", streamerName,
+				sugar.Debugw("Retrying getting stream", "streamerName", streamerName,
 					"rateLimit", streams.GetRateLimit(), "rateLimitRemaining", streams.GetRateLimitRemaining(),
 					"rateLimitReset", streams.GetRateLimitReset())
 				continue
 			}
 			// Now online
-			a.sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "id", streams.Data.Streams[0].ID)
+			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "id", streams.Data.Streams[0].ID)
 			return nil
 		}
 	}

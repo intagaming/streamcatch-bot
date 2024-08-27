@@ -43,29 +43,15 @@ type Config struct {
 	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder
 	StreamAvailableChecker        func(streamId int64) (bool, error)
+	StreamWaiter                  func(agent *Agent) error
+	Helix                         *helix.Client
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
-	helixClient, err := helix.NewClient(&helix.Options{
-		ClientID:     cfg.TwitchClientId,
-		ClientSecret: cfg.TwitchClientSecret,
-	})
-	if err != nil {
-		sugar.Panicw("Failed to create helix client", "error", err)
-	}
-
-	// TODO: handle token refresh
-	resp, err := helixClient.RequestAppAccessToken([]string{"user:read:email"})
-	if err != nil {
-		sugar.Panicw("Failed to get twitch app access token", "error", err)
-	}
-	// Set the access token on the client
-	helixClient.SetAppAccessToken(resp.Data.AccessToken)
-
 	b := Broadcaster{
 		sugar:  sugar,
 		agents: make(map[int64]*Agent),
-		helix:  helixClient,
+		helix:  cfg.Helix,
 		config: cfg,
 	}
 
@@ -155,7 +141,6 @@ func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
 		ctx:                    ctx,
 		ctxCancel:              cancel,
 		stream:                 stream,
-		redirectUrl:            stream.Url,
 		ffmpegCmder:            b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
 		dummyStreamFfmpegCmder: b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url),
 	}
@@ -179,4 +164,19 @@ func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) 
 	}
 	a.stream.ScheduledEndAt = newScheduledEndAt
 	return nil
+}
+
+func NewRealStreamWaiter(sugar *zap.SugaredLogger, helixClient *helix.Client, a *Agent) error {
+	var err error
+	if a.stream.Platform == "twitch" {
+		err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.stream)
+	} else if a.stream.Platform == "youtube" {
+		_, err = WaitForYoutubeOnline(sugar, a.ctx, a.stream)
+	} else if a.stream.Platform == "generic" {
+		_, err = WaitForGenericOnline(sugar, a.ctx, a.stream)
+	} else {
+		//a.sugar.Panicw("Unknown platform", "streamId", a.stream.Id, "platform", a.stream.Platform)
+		return errors.New("Unknown platform: " + a.stream.Platform)
+	}
+	return err
 }

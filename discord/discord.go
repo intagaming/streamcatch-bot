@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/bwmarrin/discordgo"
+	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -57,6 +58,22 @@ func New(sugar *zap.SugaredLogger) *Bot {
 		sugar.Warn("TWITCH_AUTH_TOKEN is not set")
 	}
 
+	helixClient, err := helix.NewClient(&helix.Options{
+		ClientID:     twitchClientId,
+		ClientSecret: twitchClientSecret,
+	})
+	if err != nil {
+		sugar.Panicw("Failed to create helix client", "error", err)
+	}
+
+	// TODO: handle token refresh
+	resp, err := helixClient.RequestAppAccessToken([]string{"user:read:email"})
+	if err != nil {
+		sugar.Panicw("Failed to get twitch app access token", "error", err)
+	}
+	// Set the access token on the client
+	helixClient.SetAppAccessToken(resp.Data.AccessToken)
+
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
 		TwitchClientSecret:            twitchClientSecret,
@@ -76,6 +93,9 @@ func New(sugar *zap.SugaredLogger) *Bot {
 				return false, errors.New("response was not 200 but " + resp.Status)
 			}
 			return true, nil
+		},
+		StreamWaiter: func(agent *broadcaster.Agent) error {
+			return broadcaster.NewRealStreamWaiter(sugar, helixClient, agent)
 		},
 	})
 

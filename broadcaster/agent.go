@@ -35,7 +35,6 @@ type Agent struct {
 	streamStarted bool
 	// The list of IPs watching the stream.
 	readIPs                []string
-	redirectUrl            string
 	ffmpegCmder            FfmpegCmder
 	dummyStreamFfmpegCmder DummyStreamFfmpegCmder
 }
@@ -54,9 +53,6 @@ func (a *Agent) AddIp(ip string) {
 }
 func (a *Agent) StreamStarted() bool {
 	return a.streamStarted
-}
-func (a *Agent) RedirectUrl() string {
-	return a.redirectUrl
 }
 func (a *Agent) StreamUrl() string {
 	return a.stream.Url
@@ -124,21 +120,7 @@ func (a *Agent) Run() {
 	a.sugar.Debugw("Agent initialized", "streamId", a.stream.Id)
 
 	// Wait for stream to come online based on the platform
-	// TODO: abstract away
-	var youtubeStreamlinkInfo *YoutubeStreamlinkInfo
-	var waitError error
-	if a.stream.Platform == "twitch" {
-		waitError = a.WaitForTwitchOnline()
-	} else if a.stream.Platform == "youtube" {
-		youtubeStreamlinkInfo, waitError = a.WaitForYoutubeOnline()
-		if youtubeStreamlinkInfo != nil {
-			a.redirectUrl = fmt.Sprintf("https://www.youtube.com/watch?v=%v", youtubeStreamlinkInfo.Metadata.Id)
-		}
-	} else if a.stream.Platform == "generic" {
-		_, waitError = a.WaitForGenericOnline()
-	} else {
-		a.sugar.Panicw("Unknown platform", "streamId", a.stream.Id, "platform", a.stream.Platform)
-	}
+	waitError := b.config.StreamWaiter(a)
 	if a.ctx.Err() != nil {
 		return
 	}
