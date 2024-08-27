@@ -91,7 +91,7 @@ func (a *Agent) Run() {
 
 	go func() {
 		try := func() error {
-			resp, err := http.Get(b.mediaServerApiUrl + "/v3/paths/get/" + strconv.FormatInt(a.stream.Id, 10))
+			resp, err := http.Get(b.config.MediaServerApiUrl + "/v3/paths/get/" + strconv.FormatInt(a.stream.Id, 10))
 			if err != nil {
 				return err
 			}
@@ -308,11 +308,12 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 			case <-a.ctx.Done():
 				break
 			case <-streamerRetryTimer.C:
+				// TODO: move this out
 				var streamerFfmpegCmd *exec.Cmd
 				streamerFfmpegCmd = exec.CommandContext(a.ctx, "ffmpeg", "-hide_banner",
 					"-loglevel", "error", "-re", "-i", "pipe:", "-c:v", "copy",
 					"-c:a", "aac", "-f", "rtsp",
-					fmt.Sprintf("rtsp://%s:%s@%s/%v", b.mediaServerPublishUser, b.mediaServerPublishPassword, b.mediaServerRtspHost, a.stream.Id))
+					fmt.Sprintf("rtsp://%s:%s@%s/%v", b.config.MediaServerPublishUser, b.config.MediaServerPublishPassword, b.config.MediaServerRtspHost, a.stream.Id))
 				var streamerFfmpegErrBuf bytes.Buffer
 				streamerFfmpegCmd.Stdin = pipe
 				streamerFfmpegCmd.Stderr = &streamerFfmpegErrBuf

@@ -55,8 +55,8 @@ func (a *Agent) StreamFromTwitch(pipeWrite *io.PipeWriter, streamlinkErrBuf *byt
 	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
 
 	args := []string{a.stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
-	if b.twitchAuthToken != "" {
-		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", b.twitchAuthToken))
+	if b.config.TwitchAuthToken != "" {
+		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", b.config.TwitchAuthToken))
 	}
 	streamlinkCmd := exec.CommandContext(a.ctx, "streamlink", args...)
 	streamlinkCmd.Stderr = streamlinkErrBuf

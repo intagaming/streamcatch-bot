@@ -6,21 +6,16 @@ import (
 	"fmt"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
 )
 
 type Broadcaster struct {
-	sugar                      *zap.SugaredLogger
-	agents                     map[int64]*Agent
-	helix                      *helix.Client
-	twitchAuthToken            string
-	mediaServerRtspHost        string
-	mediaServerPublishUser     string
-	mediaServerPublishPassword string
-	mediaServerApiUrl          string
+	sugar  *zap.SugaredLogger
+	agents map[int64]*Agent
+	helix  *helix.Client
+	config *Config
 }
 
 func (b *Broadcaster) Agents() map[int64]*Agent {
@@ -28,27 +23,29 @@ func (b *Broadcaster) Agents() map[int64]*Agent {
 }
 
 func (b *Broadcaster) MediaServerPublishUser() string {
-	return b.mediaServerPublishUser
+	return b.config.MediaServerPublishUser
 }
 
 func (b *Broadcaster) MediaServerPublishPassword() string {
-	return b.mediaServerPublishPassword
+	return b.config.MediaServerPublishPassword
 }
 
 type broadcasterCtxKey struct{}
 
-func New(sugar *zap.SugaredLogger) *Broadcaster {
-	var twitchClientId = os.Getenv("TWITCH_CLIENT_ID")
-	if twitchClientId == "" {
-		sugar.Panic("TWITCH_CLIENT_ID is not set")
-	}
-	var twitchClientSecret = os.Getenv("TWITCH_CLIENT_SECRET")
-	if twitchClientSecret == "" {
-		sugar.Panic("TWITCH_CLIENT_SECRET is not set")
-	}
+type Config struct {
+	TwitchClientId             string
+	TwitchClientSecret         string
+	TwitchAuthToken            string
+	MediaServerRtspHost        string
+	MediaServerPublishUser     string
+	MediaServerPublishPassword string
+	MediaServerApiUrl          string
+}
+
+func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	helixClient, err := helix.NewClient(&helix.Options{
-		ClientID:     twitchClientId,
-		ClientSecret: twitchClientSecret,
+		ClientID:     cfg.TwitchClientId,
+		ClientSecret: cfg.TwitchClientSecret,
 	})
 	if err != nil {
 		sugar.Panicw("Failed to create helix client", "error", err)
@@ -62,37 +59,11 @@ func New(sugar *zap.SugaredLogger) *Broadcaster {
 	// Set the access token on the client
 	helixClient.SetAppAccessToken(resp.Data.AccessToken)
 
-	var twitchAuthToken = os.Getenv("TWITCH_AUTH_TOKEN")
-	if twitchAuthToken == "" {
-		sugar.Warn("TWITCH_AUTH_TOKEN is not set")
-	}
-
-	mediaServerRtspHost := os.Getenv("MEDIA_SERVER_RTSP_HOST")
-	if mediaServerRtspHost == "" {
-		sugar.Panic("MEDIA_SERVER_RTSP_HOST is not set")
-	}
-	mediaServerPublishUser := os.Getenv("MEDIA_SERVER_PUBLISH_USER")
-	if mediaServerPublishUser == "" {
-		sugar.Panic("MEDIA_SERVER_PUBLISH_USER is not set")
-	}
-	mediaServerPublishPassword := os.Getenv("MEDIA_SERVER_PUBLISH_PASSWORD")
-	if mediaServerPublishPassword == "" {
-		sugar.Panic("MEDIA_SERVER_PUBLISH_PASSWORD is not set")
-	}
-	mediaServerApiUrl := os.Getenv("MEDIA_SERVER_API_URL")
-	if mediaServerApiUrl == "" {
-		sugar.Panic("MEDIA_SERVER_API_URL is not set")
-	}
-
 	b := Broadcaster{
-		sugar:                      sugar,
-		agents:                     make(map[int64]*Agent),
-		helix:                      helixClient,
-		twitchAuthToken:            twitchAuthToken,
-		mediaServerRtspHost:        mediaServerRtspHost,
-		mediaServerPublishUser:     mediaServerPublishUser,
-		mediaServerPublishPassword: mediaServerPublishPassword,
-		mediaServerApiUrl:          mediaServerApiUrl,
+		sugar:  sugar,
+		agents: make(map[int64]*Agent),
+		helix:  helixClient,
+		config: cfg,
 	}
 
 	return &b
