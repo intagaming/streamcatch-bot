@@ -56,14 +56,15 @@ func New(sugar *zap.SugaredLogger) *Bot {
 	}
 
 	bc := broadcaster.New(sugar, &broadcaster.Config{
-		TwitchClientId:             twitchClientId,
-		TwitchClientSecret:         twitchClientSecret,
-		TwitchAuthToken:            twitchAuthToken,
-		MediaServerRtspHost:        mediaServerRtspHost,
-		MediaServerPublishUser:     mediaServerPublishUser,
-		MediaServerPublishPassword: mediaServerPublishPassword,
-		MediaServerApiUrl:          mediaServerApiUrl,
-		FfmpegCmderCreator:         broadcaster.NewRealFfmpegCmder,
+		TwitchClientId:                twitchClientId,
+		TwitchClientSecret:            twitchClientSecret,
+		TwitchAuthToken:               twitchAuthToken,
+		MediaServerRtspHost:           mediaServerRtspHost,
+		MediaServerPublishUser:        mediaServerPublishUser,
+		MediaServerPublishPassword:    mediaServerPublishPassword,
+		MediaServerApiUrl:             mediaServerApiUrl,
+		FfmpegCmderCreator:            broadcaster.NewRealFfmpegCmder,
+		DummyStreamFfmpegCmderCreator: broadcaster.NewRealDummyStreamFfmpegCmder,
 	})
 
 	mediaServerHlsUrl := os.Getenv("MEDIA_SERVER_HLS_URL")

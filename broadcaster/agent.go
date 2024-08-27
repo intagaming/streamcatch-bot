@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -36,9 +35,10 @@ type Agent struct {
 	stream        *Stream
 	streamStarted bool
 	// The list of IPs watching the stream.
-	readIPs     []string
-	redirectUrl string
-	ffmpegCmder FfmpegCmder
+	readIPs                []string
+	redirectUrl            string
+	ffmpegCmder            FfmpegCmder
+	dummyStreamFfmpegCmder DummyStreamFfmpegCmder
 }
 
 func (a *Agent) ScheduledEndAt() time.Time {
@@ -260,21 +260,20 @@ func (a *Agent) Close(reason error, error string) {
 	a.sugar.Debugw("Agent closed", "streamId", a.stream.Id, "reason", reason, "error", error)
 }
 
+type DummyStreamFfmpegCmder interface {
+	SetStdout(pipe io.Writer)
+	SetStderr(pipe io.Writer)
+	Start() error
+	Wait() error
+}
+
 func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) {
 	go func() {
-		var dummyFfmpegCmd *exec.Cmd
-		dummyFfmpegCmd = exec.CommandContext(ctx, "ffmpeg", "-hide_banner",
-			"-loglevel", "error", "-re", "-f", "lavfi", "-i",
-			"color=size=1280x720:rate=2:color=black", "-stream_loop", "-1", "-i", "assets/audio/lofi-study.mp3",
-			"-c:v", "libx264", "-b:v", "1500k", "-preset", "ultrafast", "-tune", "zerolatency",
-			"-c:a", "aac", "-map", "0:v", "-map", "1:a", "-vf",
-			`drawtext=text='Waiting for the stream to start':fontcolor=white:fontsize=56:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=(h-text_h)/2-30,drawtext=text='Stream URL\: `+strings.Replace(a.stream.Url, ":", `\:`, -1)+`':fontcolor=white:fontsize=28:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=(h-text_h)/2+30,drawtext=text='%{gmtime\:%Y-%m-%d %H\\\:%M\\\:%S}':fontcolor=white:fontsize=28:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10`,
-			"-g", "4", "-f", "mpegts", "-")
-
+		dummyFfmpegCmd := a.dummyStreamFfmpegCmder
 		var dummyFfmpegCombinedBuf bytes.Buffer
 		w := io.MultiWriter(pipeWrite, &dummyFfmpegCombinedBuf)
-		dummyFfmpegCmd.Stdout = w
-		dummyFfmpegCmd.Stderr = &dummyFfmpegCombinedBuf
+		dummyFfmpegCmd.SetStdout(w)
+		dummyFfmpegCmd.SetStderr(&dummyFfmpegCombinedBuf)
 		err := dummyFfmpegCmd.Start()
 		if err != nil {
 			a.Close(ReasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf))

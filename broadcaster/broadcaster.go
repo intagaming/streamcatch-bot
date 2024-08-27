@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -34,45 +33,15 @@ func (b *Broadcaster) MediaServerPublishPassword() string {
 type broadcasterCtxKey struct{}
 
 type Config struct {
-	TwitchClientId             string
-	TwitchClientSecret         string
-	TwitchAuthToken            string
-	MediaServerRtspHost        string
-	MediaServerPublishUser     string
-	MediaServerPublishPassword string
-	MediaServerApiUrl          string
-	FfmpegCmderCreator         func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
-}
-
-type RealFfmpegCmder struct {
-	streamerFfmpegCmd *exec.Cmd
-}
-
-func NewRealFfmpegCmder(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
-	streamerFfmpegCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner",
-		"-loglevel", "error", "-re", "-i", "pipe:", "-c:v", "copy",
-		"-c:a", "aac", "-f", "rtsp",
-		fmt.Sprintf("rtsp://%s:%s@%s/%v", config.MediaServerPublishUser, config.MediaServerPublishPassword, config.MediaServerRtspHost, streamId))
-	realFfmpegCmder := RealFfmpegCmder{
-		streamerFfmpegCmd: streamerFfmpegCmd,
-	}
-	return &realFfmpegCmder
-}
-
-func (r *RealFfmpegCmder) SetStdin(pipe io.Reader) {
-	r.streamerFfmpegCmd.Stdin = pipe
-}
-
-func (r *RealFfmpegCmder) SetStderr(pipe io.Writer) {
-	r.streamerFfmpegCmd.Stderr = pipe
-}
-
-func (r *RealFfmpegCmder) Start() error {
-	return r.streamerFfmpegCmd.Start()
-}
-
-func (r *RealFfmpegCmder) Wait() error {
-	return r.streamerFfmpegCmd.Wait()
+	TwitchClientId                string
+	TwitchClientSecret            string
+	TwitchAuthToken               string
+	MediaServerRtspHost           string
+	MediaServerPublishUser        string
+	MediaServerPublishPassword    string
+	MediaServerApiUrl             string
+	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
+	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
@@ -181,12 +150,13 @@ func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
 	ctx = context.WithValue(ctx, broadcasterCtxKey{}, b)
 
 	agent := Agent{
-		sugar:       b.sugar,
-		ctx:         ctx,
-		ctxCancel:   cancel,
-		stream:      stream,
-		redirectUrl: stream.Url,
-		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
+		sugar:                  b.sugar,
+		ctx:                    ctx,
+		ctxCancel:              cancel,
+		stream:                 stream,
+		redirectUrl:            stream.Url,
+		ffmpegCmder:            b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
+		dummyStreamFfmpegCmder: b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url),
 	}
 
 	go agent.Run()
