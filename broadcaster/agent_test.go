@@ -25,5 +25,5 @@ func TestAgent_DummyStream(t *testing.T) {
 		Listener:       &listener,
 	})
 
-	// TODO: expect stream to start
+	// TODO: expect ffmpeg stream to receive dummy stream outputs
 }
