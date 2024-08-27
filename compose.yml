@@ -3,7 +3,6 @@ services:
     image: streamcatch-bot
     build: .
     restart: unless-stopped
-    command: -d
     environment:
       - APP_ID=${APP_ID}
       - BOT_TOKEN=${BOT_TOKEN}
