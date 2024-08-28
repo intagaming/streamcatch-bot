@@ -97,7 +97,8 @@ func (a *Agent) Run() {
 			return nil
 		}
 
-		retryTimer := clock.NewTimer(2 * time.Second)
+		retryTimer := clock.NewTicker(2 * time.Second)
+		defer retryTimer.Stop()
 		for {
 			select {
 			case <-a.ctx.Done():
@@ -106,7 +107,7 @@ func (a *Agent) Run() {
 				err := try()
 				if err != nil {
 					a.sugar.Debugw("Stream poller: Failed to get stream info. Retrying", "streamId", a.stream.Id, "error", err)
-					retryTimer.Reset(3 * time.Second)
+					//retryTimer.Reset(3 * time.Second)
 					continue
 				}
 				a.sugar.Debugw("Stream poller: Done", "streamId", a.stream.Id)

@@ -185,44 +185,59 @@ func TestAgent(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Need to expect StreamAvailableChecker to be called 2 times to guarantee stream is not started,
+		// Need to expect StreamAvailableChecker to be called at least 2 times to guarantee stream is not started,
 		// because streamAvailableChecker is called before setting StreamStarted
-		startTime := mClock.Now()
-		limit := 20 * time.Second
-		for mClock.Now().Sub(startTime) < limit {
-			d, w := mClock.AdvanceNext()
-			w.MustWait(ctx)
-			cumulativeElapsed += d
-			if cumulativeElapsed > limit {
-				t.Fatal("unable to wait for stream available checks")
-			}
-			ok := false
-			okChan := make(chan struct{})
-			stopChan := make(chan struct{})
-			go func() {
-				select {
-				case <-stopChan:
-				case <-time.After(time.Second):
-				}
-				if streamAvailableCalledTime >= 2 {
-					ok = true
-					okChan <- struct{}{}
-				}
-			}()
-			select {
-			case <-time.After(200 * time.Millisecond):
-				stopChan <- struct{}{}
-			case <-okChan:
+		t.Logf("Now 1: %v", mClock.Now())
+		desired := 20 * time.Second
+		for desired > 0 {
+			p, ok := mClock.Peek()
+			if !ok || p > desired {
+				mClock.Advance(desired).MustWait(ctx)
 				break
 			}
-			if ok {
-				break
-			}
+			mClock.Advance(p).MustWait(ctx)
+			desired -= p
 		}
+		t.Logf("Now 2: %v", mClock.Now())
+		assert.GreaterOrEqual(t, streamAvailableCalledTime, 2)
+		//startTime := mClock.Now()
+		//limit := 20 * time.Second
+		//for mClock.Now().Sub(startTime) < limit {
+		//	d, w := mClock.AdvanceNext()
+		//	w.MustWait(ctx)
+		//	cumulativeElapsed += d
+		//	if cumulativeElapsed > limit {
+		//		t.Fatal("unable to wait for stream available checks")
+		//	}
+		//	ok := false
+		//	okChan := make(chan struct{})
+		//	stopChan := make(chan struct{})
+		//	go func() {
+		//		select {
+		//		case <-stopChan:
+		//		case <-time.After(time.Second):
+		//		}
+		//		if streamAvailableCalledTime >= 2 {
+		//			ok = true
+		//			okChan <- struct{}{}
+		//		}
+		//	}()
+		//	select {
+		//	case <-time.After(200 * time.Millisecond):
+		//		stopChan <- struct{}{}
+		//	case <-okChan:
+		//		break
+		//	}
+		//	if ok {
+		//		break
+		//	}
+		//}
 
 		assert.False(t, a.StreamStarted())
 
+		t.Logf("Now 3: %v", mClock.Now())
 		streamAvailableChan <- struct{}{}
+		t.Logf("Now 4: %v", mClock.Now())
 
 		assert.Eventually(t, func() bool {
 			return a.StreamStarted()
@@ -246,10 +261,20 @@ func TestAgent(t *testing.T) {
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
 		// expect stream to end
-		// TODO: listener instead
 		assert.False(t, listener.closeCalled)
-		// TODO: wait 30s; skip time instead
-		time.Sleep(32 * time.Second)
+
+		// Skip time for the stream catch to be considered successful
+		desired = 31 * time.Second
+		for desired > 0 {
+			p, ok := mClock.Peek()
+			if !ok || p > desired {
+				mClock.Advance(desired).MustWait(ctx)
+				break
+			}
+			mClock.Advance(p).MustWait(ctx)
+			desired -= p
+		}
+
 		streamEndChan <- struct{}{}
 
 		assert.Eventually(t, func() bool {
