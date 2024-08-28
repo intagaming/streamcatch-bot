@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/bwmarrin/discordgo v0.28.1
+	github.com/coder/quartz v0.1.0
 	github.com/nicklaw5/helix/v2 v2.30.0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0

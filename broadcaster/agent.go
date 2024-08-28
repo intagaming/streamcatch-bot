@@ -59,12 +59,13 @@ func (a *Agent) StreamUrl() string {
 
 func (a *Agent) Run() {
 	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+	clock := b.config.Clock
 
 	// Goroutine to check for stream timeout
 	go func() {
 		a.checkTimeout()
 
-		ticker := time.NewTicker(20 * time.Second)
+		ticker := clock.NewTicker(20 * time.Second)
 		for {
 			select {
 			case <-a.ctx.Done():
@@ -96,7 +97,7 @@ func (a *Agent) Run() {
 			return nil
 		}
 
-		retryTimer := time.NewTimer(2 * time.Second)
+		retryTimer := clock.NewTimer(2 * time.Second)
 		for {
 			select {
 			case <-a.ctx.Done():
@@ -134,7 +135,7 @@ func (a *Agent) Run() {
 	if !a.stream.GoneOnline {
 		a.sugar.Debugw("Stream gone online", "streamId", a.stream.Id)
 
-		a.stream.ScheduledEndAt = time.Now().Add(LiveDuration)
+		a.stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
 		a.stream.GoneOnline = true
 
 		a.stream.Listener.Status(a.stream, GoneLive)
@@ -147,7 +148,7 @@ func (a *Agent) Run() {
 	// Because we are early, we will do some retry. If the stream is already
 	// going for more than some amount of time, we count it as a successful
 	// catch, assuming the streamer went offline, and won't retry.
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := clock.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	attempt := 1
 	for {
@@ -155,11 +156,11 @@ func (a *Agent) Run() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			retryStartTime := time.Now()
+			retryStartTime := clock.Now()
 
 			streamErr := b.config.Streamer(a.ctx, a.stream, pipeWrite)
 
-			retryEndTime := time.Now()
+			retryEndTime := clock.Now()
 
 			if attempt < MaxRetries && retryEndTime.Sub(retryStartTime) < DurationToConsiderCatchedOk {
 				a.sugar.Debugw("Retrying getting stream", "streamId", a.stream.Id, "url", a.stream.Url)
@@ -240,7 +241,9 @@ type FfmpegCmder interface {
 }
 
 func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
-	streamerRetryTimer := time.NewTimer(0)
+	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+	clock := b.config.Clock
+	streamerRetryTimer := clock.NewTimer(0)
 	go func() {
 		for {
 			select {
@@ -280,7 +283,9 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 }
 
 func (a *Agent) checkTimeout() {
-	if time.Now().After(a.stream.ScheduledEndAt) {
+	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+	clock := b.config.Clock
+	if clock.Now().After(a.stream.ScheduledEndAt) {
 		a.sugar.Debugw("Agent timed out", "streamId", a.stream.Id)
 
 		a.stream.Listener.Status(a.stream, Timeout)

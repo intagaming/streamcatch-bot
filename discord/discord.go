@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/bwmarrin/discordgo"
+	"github.com/coder/quartz"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"io"
@@ -139,6 +140,7 @@ func New(sugar *zap.SugaredLogger) *Bot {
 
 			return nil
 		},
+		Clock: quartz.NewReal(),
 	})
 
 	mediaServerHlsUrl := os.Getenv("MEDIA_SERVER_HLS_URL")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/coder/quartz"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"io"
@@ -47,6 +48,7 @@ type Config struct {
 	StreamWaiter                  func(agent *Agent) error
 	Helix                         *helix.Client
 	Streamer                      func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error
+	Clock                         quartz.Clock
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {

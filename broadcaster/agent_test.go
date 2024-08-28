@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap/zaptest"
 	"io"
@@ -74,6 +75,7 @@ func (t *testDummyStreamFfmpegCmder) Wait() error {
 
 func TestAgent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
+	mClock := quartz.NewMock(t)
 
 	t.Run("FfmpegStreamHappyCase", func(t *testing.T) {
 		ffmpegCmder := &testFfmpegCmder{}
@@ -125,6 +127,7 @@ func TestAgent(t *testing.T) {
 				// block
 				return nil
 			},
+			Clock: mClock,
 		})
 		listener := testListener{}
 
@@ -176,11 +179,47 @@ func TestAgent(t *testing.T) {
 
 		// expect StreamCatch stream available
 		// TODO: skip time instead of waiting around
-		assert.Eventually(t, func() bool {
-			// Need 2 times to guarantee stream is not started, because streamAvailableChecker is called before setting
-			// StreamStarted
-			return streamAvailableCalledTime >= 2
-		}, 20*time.Second, 10*time.Millisecond)
+		//assert.Eventually(t, func() bool {
+		//	return streamAvailableCalledTime >= 2
+		//}, 20*time.Second, 10*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Need to expect StreamAvailableChecker to be called 2 times to guarantee stream is not started,
+		// because streamAvailableChecker is called before setting StreamStarted
+		startTime := mClock.Now()
+		limit := 20 * time.Second
+		for mClock.Now().Sub(startTime) < limit {
+			d, w := mClock.AdvanceNext()
+			w.MustWait(ctx)
+			cumulativeElapsed += d
+			if cumulativeElapsed > limit {
+				t.Fatal("unable to wait for stream available checks")
+			}
+			ok := false
+			okChan := make(chan struct{})
+			stopChan := make(chan struct{})
+			go func() {
+				select {
+				case <-stopChan:
+				case <-time.After(time.Second):
+				}
+				if streamAvailableCalledTime >= 2 {
+					ok = true
+					okChan <- struct{}{}
+				}
+			}()
+			select {
+			case <-time.After(200 * time.Millisecond):
+				stopChan <- struct{}{}
+			case <-okChan:
+				break
+			}
+			if ok {
+				break
+			}
+		}
+
 		assert.False(t, a.StreamStarted())
 
 		streamAvailableChan <- struct{}{}
