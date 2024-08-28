@@ -139,12 +139,14 @@ func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
 	ctx = context.WithValue(ctx, broadcasterCtxKey{}, b)
 
 	agent := Agent{
-		sugar:                  b.sugar,
-		ctx:                    ctx,
-		ctxCancel:              cancel,
-		stream:                 stream,
-		ffmpegCmder:            b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
-		dummyStreamFfmpegCmder: b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url),
+		sugar:       b.sugar,
+		ctx:         ctx,
+		ctxCancel:   cancel,
+		stream:      stream,
+		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
+		dummyStreamFfmpegCmderCreator: func(ctx context.Context) DummyStreamFfmpegCmder {
+			return b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url)
+		},
 	}
 
 	go agent.Run()

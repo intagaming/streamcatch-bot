@@ -2,9 +2,11 @@ package broadcaster
 
 import (
 	"context"
+	"errors"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap/zaptest"
 	"io"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,7 +17,9 @@ func (tl *testListener) Status(stream *Stream, status StreamStatus) {}
 func (tl *testListener) Close(stream *Stream, reason error)         {}
 
 type testFfmpegCmder struct {
-	stdin io.Reader
+	ctx     context.Context
+	stdin   io.Reader
+	started bool
 }
 
 func (t *testFfmpegCmder) SetStdin(pipe io.Reader) {
@@ -26,15 +30,19 @@ func (t *testFfmpegCmder) SetStderr(pipe io.Writer) {
 }
 
 func (t *testFfmpegCmder) Start() error {
+	t.started = true
 	return nil
 }
 
 func (t *testFfmpegCmder) Wait() error {
+	<-t.ctx.Done()
 	return nil
 }
 
 type testDummyStreamFfmpegCmder struct {
-	stdout io.Writer
+	ctx     context.Context
+	stdout  io.Writer
+	started bool
 }
 
 func (t *testDummyStreamFfmpegCmder) SetStdout(pipe io.Writer) {
@@ -45,61 +53,91 @@ func (t *testDummyStreamFfmpegCmder) SetStderr(pipe io.Writer) {
 }
 
 func (t *testDummyStreamFfmpegCmder) Start() error {
+	t.started = true
 	return nil
 }
 
 func (t *testDummyStreamFfmpegCmder) Wait() error {
-	// TODO: wait for context
+	<-t.ctx.Done()
+	return nil
 }
 
-func TestAgent_DummyStream(t *testing.T) {
+func TestAgent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
-	ffmpegCmder := &testFfmpegCmder{}
-	dummyFfmpegCmder := &testDummyStreamFfmpegCmder{}
-	broadcaster := New(logger.Sugar(), &Config{
-		FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
-			return ffmpegCmder
-		},
-		DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
-			return dummyFfmpegCmder
-		},
-		StreamAvailableChecker: func(streamId int64) (bool, error) {
-			return false, nil
-		},
-		StreamWaiter: func(agent *Agent) error {
-			return nil
-		},
-		Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
-			return nil
-		},
-	})
-	listener := testListener{}
+	t.Run("FfmpegStreamReceivesDummyStream", func(t *testing.T) {
+		ffmpegCmder := &testFfmpegCmder{}
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+				ffmpegCmder.ctx = ctx
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId int64) (bool, error) {
+				return false, nil
+			},
+			StreamWaiter: func(agent *Agent) error {
+				// Stream will never come online
+				<-ffmpegCmder.ctx.Done()
+				return errors.New("stream went online when it should not")
+			},
+			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+				return nil
+			},
+		})
+		listener := testListener{}
 
-	a := broadcaster.HandleStream(&Stream{
-		Id:             1,
-		Url:            "http://TEST_URL",
-		Platform:       "twitch",
-		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
-		Listener:       &listener,
-	})
+		_ = broadcaster.HandleStream(&Stream{
+			Id:             1,
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      time.Now(),
+			ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+			Listener:       &listener,
+		})
 
-	assert.Eventually(t, func() bool {
-		return a.streamStarted
-	}, time.Second, 10*time.Millisecond)
-	//
-	//// TODO: expect ffmpeg stream to receive dummy stream outputs
-	//dummyOutData := []byte{1, 2, 3, 4, 5}
-	//_, err := dummyFfmpegCmder.stdout.Write(dummyOutData)
-	//if err != nil {
-	//	t.Fatalf("Failed to write dummy data: %v", err)
-	//}
-	//ffmpegCmderIn := make([]byte, 5)
-	//_, err = ffmpegCmder.stdin.Read(ffmpegCmderIn)
-	//if err != nil {
-	//	t.Fatalf("Failed to read stdin ffmpeg cmder: %v", err)
-	//}
-	//
-	//assert.Equal(t, dummyOutData, ffmpegCmderIn)
+		assert.Eventually(t, func() bool {
+			return dummyFfmpegCmder.started && ffmpegCmder.started
+		}, time.Second, 10*time.Millisecond)
+
+		// expect ffmpeg stream to receive dummy stream outputs
+		dummyOutData := []byte{1, 2, 3, 4, 5}
+
+		dummyWriteWg := sync.WaitGroup{}
+		dummyWriteWg.Add(1)
+		var writeErr error
+		go func() {
+			_, err := dummyFfmpegCmder.stdout.Write(dummyOutData)
+			writeErr = err
+			dummyWriteWg.Done()
+		}()
+
+		ffmpegCmderIn := make([]byte, 5)
+		_, err := ffmpegCmder.stdin.Read(ffmpegCmderIn)
+		if err != nil {
+			t.Fatalf("Failed to read stdin ffmpeg cmder: %v", err)
+		}
+
+		dummyWriteWgWaitDoneChan := make(chan struct{})
+		go func() {
+			dummyWriteWg.Wait()
+			dummyWriteWgWaitDoneChan <- struct{}{}
+		}()
+		select {
+		case <-dummyWriteWgWaitDoneChan:
+		case <-time.After(time.Second):
+			t.Fatal("Dummy write to ffmpeg never ended")
+		}
+		if writeErr != nil {
+			t.Errorf("Failed to write dummy data: %v", err)
+		}
+
+		assert.Equal(t, dummyOutData, ffmpegCmderIn)
+	})
 }

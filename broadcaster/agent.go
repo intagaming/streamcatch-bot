@@ -33,9 +33,9 @@ type Agent struct {
 	stream        *Stream
 	streamStarted bool
 	// The list of IPs watching the stream.
-	readIPs                []string
-	ffmpegCmder            FfmpegCmder
-	dummyStreamFfmpegCmder DummyStreamFfmpegCmder
+	readIPs                       []string
+	ffmpegCmder                   FfmpegCmder
+	dummyStreamFfmpegCmderCreator func(ctx context.Context) DummyStreamFfmpegCmder
 }
 
 func (a *Agent) ScheduledEndAt() time.Time {
@@ -203,7 +203,7 @@ type DummyStreamFfmpegCmder interface {
 
 func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) {
 	go func() {
-		dummyFfmpegCmd := a.dummyStreamFfmpegCmder
+		dummyFfmpegCmd := a.dummyStreamFfmpegCmderCreator(ctx)
 		var dummyFfmpegCombinedBuf bytes.Buffer
 		w := io.MultiWriter(pipeWrite, &dummyFfmpegCombinedBuf)
 		dummyFfmpegCmd.SetStdout(w)
@@ -240,7 +240,7 @@ type FfmpegCmder interface {
 }
 
 func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
-	streamerRetryTimer := time.NewTimer(3 * time.Second)
+	streamerRetryTimer := time.NewTimer(0)
 	go func() {
 		for {
 			select {
