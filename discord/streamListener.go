@@ -33,6 +33,7 @@ func (sl *StreamListener) Status(stream *broadcaster.Stream, status broadcaster.
 		}
 		sl.message = msg
 	case broadcaster.GoneLive:
+		// TODO: wait for StreamStarted message to be sent
 		msg := sl.bot.MakeStreamGoneLiveMessage(stream.Url, stream.Id)
 		_, err := sl.bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			ID:         sl.message.ID,
