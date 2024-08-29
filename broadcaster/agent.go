@@ -149,14 +149,14 @@ func (a *Agent) Run() {
 	// Because we are early, we will do some retry. If the stream is already
 	// going for more than some amount of time, we count it as a successful
 	// catch, assuming the streamer went offline, and won't retry.
-	ticker := clock.NewTicker(10 * time.Second)
-	defer ticker.Stop()
+	timer := clock.NewTimer(0)
+	defer timer.Stop()
 	attempt := 1
 	for {
 		select {
 		case <-a.ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			retryStartTime := clock.Now()
 
 			streamErr := b.config.Streamer(a.ctx, a.stream, pipeWrite)
@@ -166,12 +166,14 @@ func (a *Agent) Run() {
 			if attempt < MaxRetries && retryEndTime.Sub(retryStartTime) < DurationToConsiderCatchedOk {
 				a.sugar.Debugw("Retrying getting stream", "streamId", a.stream.Id, "url", a.stream.Url)
 				attempt++
+				timer.Reset(10 * time.Second)
 				continue
 			}
 
 			if streamErr != nil {
 				a.sugar.Debugw("Stream terminated", "streamId", a.stream.Id, "error", streamErr)
 				a.Close(ReasonErrored, streamErr.Error())
+				return
 			}
 
 			a.Close(ReasonNormal, "")
