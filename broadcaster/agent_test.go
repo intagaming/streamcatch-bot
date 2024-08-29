@@ -80,11 +80,11 @@ func TestAgent(t *testing.T) {
 	t.Run("FfmpegStreamHappyCase", func(t *testing.T) {
 		ffmpegCmder := &testFfmpegCmder{}
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
-		streamAvailableChan := make(chan struct{})
+		streamAvailableChan := make(chan struct{}, 1)
 		streamAvailableCalledTime := 0
-		streamGoneOnlineChan := make(chan struct{})
+		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamerData := []byte{69, 110, 105, 99, 101}
-		streamEndChan := make(chan struct{})
+		streamEndChan := make(chan struct{}, 1)
 
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
@@ -178,60 +178,36 @@ func TestAgent(t *testing.T) {
 		assert.Equal(t, dummyOutData, ffmpegCmderIn)
 
 		// expect StreamCatch stream available
-		// TODO: skip time instead of waiting around
-		//assert.Eventually(t, func() bool {
-		//	return streamAvailableCalledTime >= 2
-		//}, 20*time.Second, 10*time.Millisecond)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
 		// Need to expect StreamAvailableChecker to be called at least 2 times to guarantee stream is not started,
 		// because streamAvailableChecker is called before setting StreamStarted
-		t.Logf("Now 1: %v", mClock.Now())
-		desired := 20 * time.Second
-		for desired > 0 {
-			p, ok := mClock.Peek()
-			if !ok || p > desired {
-				mClock.Advance(desired).MustWait(ctx)
-				break
+		// TODO: advance until streamAvailableCalledTime satisfy
+		advanceUntilCond := func(cond func() bool, desired time.Duration) {
+			for {
+				p, ok := mClock.Peek()
+				if !ok || p > desired {
+					mClock.Advance(desired).MustWait(ctx)
+					select {
+					case <-time.After(10 * time.Millisecond):
+					}
+					break
+				}
+				mClock.Advance(p).MustWait(ctx)
+				desired -= p
+				// Give time for agent's goroutine to catch the Ticker's channel
+				select {
+				case <-time.After(10 * time.Millisecond):
+				}
+				if cond() {
+					break
+				}
 			}
-			mClock.Advance(p).MustWait(ctx)
-			desired -= p
 		}
-		t.Logf("Now 2: %v", mClock.Now())
+		advanceUntilCond(func() bool {
+			return streamAvailableCalledTime >= 2
+		}, 20*time.Second)
 		assert.GreaterOrEqual(t, streamAvailableCalledTime, 2)
-		//startTime := mClock.Now()
-		//limit := 20 * time.Second
-		//for mClock.Now().Sub(startTime) < limit {
-		//	d, w := mClock.AdvanceNext()
-		//	w.MustWait(ctx)
-		//	cumulativeElapsed += d
-		//	if cumulativeElapsed > limit {
-		//		t.Fatal("unable to wait for stream available checks")
-		//	}
-		//	ok := false
-		//	okChan := make(chan struct{})
-		//	stopChan := make(chan struct{})
-		//	go func() {
-		//		select {
-		//		case <-stopChan:
-		//		case <-time.After(time.Second):
-		//		}
-		//		if streamAvailableCalledTime >= 2 {
-		//			ok = true
-		//			okChan <- struct{}{}
-		//		}
-		//	}()
-		//	select {
-		//	case <-time.After(200 * time.Millisecond):
-		//		stopChan <- struct{}{}
-		//	case <-okChan:
-		//		break
-		//	}
-		//	if ok {
-		//		break
-		//	}
-		//}
 
 		assert.False(t, a.StreamStarted())
 
@@ -239,33 +215,41 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan <- struct{}{}
 		t.Logf("Now 4: %v", mClock.Now())
 
-		assert.Eventually(t, func() bool {
+		advanceUntilCond(func() bool {
 			return a.StreamStarted()
-		}, 5*time.Second, 10*time.Millisecond)
+		}, 5*time.Second)
+		assert.True(t, a.StreamStarted())
+
+		t.Logf("Stream started")
 
 		// expect StreamCatch gone online ok
 		assert.False(t, a.GoneOnline())
 
 		streamGoneOnlineChan <- struct{}{}
 
-		assert.Eventually(t, func() bool {
+		advanceUntilCond(func() bool {
 			return a.GoneOnline()
-		}, 5*time.Second, 10*time.Millisecond)
+		}, 5*time.Second)
+		assert.True(t, a.GoneOnline())
+		t.Logf("Stream gone online")
 
 		// expect ffmpegCmder to receive stream data from Streamer
+		// TODO: fix read block
+		t.Logf("read 1")
 		ffmpegCmderIn = make([]byte, len(streamerData))
 		_, err = ffmpegCmder.stdin.Read(ffmpegCmderIn)
 		if err != nil {
 			t.Fatalf("Failed to read stdin ffmpeg cmder: %v", err)
 		}
+		t.Logf("read 2")
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
 		// expect stream to end
 		assert.False(t, listener.closeCalled)
 
 		// Skip time for the stream catch to be considered successful
-		desired = 31 * time.Second
-		for desired > 0 {
+		desired := 31 * time.Second
+		for {
 			p, ok := mClock.Peek()
 			if !ok || p > desired {
 				mClock.Advance(desired).MustWait(ctx)
@@ -276,10 +260,12 @@ func TestAgent(t *testing.T) {
 		}
 
 		streamEndChan <- struct{}{}
+		t.Logf("abc")
 
-		assert.Eventually(t, func() bool {
+		advanceUntilCond(func() bool {
 			return listener.closeCalled
-		}, 5*time.Second, 10*time.Millisecond)
+		}, 5*time.Second)
+		assert.True(t, listener.closeCalled)
 		assert.Equal(t, listener.closeReason, ReasonNormal)
 	})
 }
