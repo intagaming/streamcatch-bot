@@ -14,13 +14,13 @@ import (
 )
 
 type testListener struct {
-	lastStatus  StreamStatus
-	closeCalled bool
-	closeReason error
+	statusHistory []StreamStatus
+	closeCalled   bool
+	closeReason   error
 }
 
 func (tl *testListener) Status(stream *Stream, status StreamStatus) {
-	tl.lastStatus = status
+	tl.statusHistory = append(tl.statusHistory, status)
 }
 func (tl *testListener) Close(stream *Stream, reason error) {
 	tl.closeCalled = true
@@ -134,6 +134,13 @@ func TestAgent(t *testing.T) {
 			Clock: mClock,
 		})
 		listener := testListener{}
+		waitForAndPopStreamStatus := func(status StreamStatus) {
+			assert.EventuallyWithT(t, func(c *assert.CollectT) {
+				assert.NotZero(t, listener.statusHistory)
+				assert.Equal(t, status, listener.statusHistory[0])
+			}, time.Second, 10*time.Millisecond)
+			listener.statusHistory = listener.statusHistory[1:]
+		}
 
 		a := broadcaster.HandleStream(&Stream{
 			Id:             1,
@@ -222,6 +229,8 @@ func TestAgent(t *testing.T) {
 		}, 5*time.Second)
 		assert.True(t, a.StreamStarted())
 
+		waitForAndPopStreamStatus(StreamStarted)
+
 		// expect StreamCatch gone online ok
 		assert.False(t, a.GoneOnline())
 
@@ -231,6 +240,8 @@ func TestAgent(t *testing.T) {
 			return a.GoneOnline()
 		}, 5*time.Second)
 		assert.True(t, a.GoneOnline())
+
+		waitForAndPopStreamStatus(GoneLive)
 
 		// expect ffmpegCmder to receive stream data from Streamer
 		var streamReadErr error
@@ -272,5 +283,6 @@ func TestAgent(t *testing.T) {
 		}, 5*time.Second)
 		assert.True(t, listener.closeCalled)
 		assert.Equal(t, listener.closeReason, ReasonNormal)
+		waitForAndPopStreamStatus(Ended)
 	})
 }
