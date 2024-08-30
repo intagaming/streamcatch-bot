@@ -70,22 +70,32 @@ type Stream struct {
 	ScheduledEndAt time.Time
 	TerminatedAt   time.Time
 	GoneOnline     bool
+	Status         StreamStatus
+	EndedReason    *EndedReason
 	Listener       StreamStatusListener
 }
 
 type StreamStatus int
 
 const (
-	StreamStarted StreamStatus = iota
+	Waiting StreamStatus = iota
 	GoneLive
-	ForceStopped
 	Ended
+)
+
+type EndedReason int
+
+const (
+	ForceStopped EndedReason = iota
 	Timeout
+	Fulfilled
+	Errored
 )
 
 type StreamStatusListener interface {
-	Status(stream *Stream, status StreamStatus)
-	Close(stream *Stream, reason error)
+	Status(stream *Stream)
+	StreamStarted(stream *Stream)
+	Close(stream *Stream)
 }
 
 var (

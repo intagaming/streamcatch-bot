@@ -19,19 +19,18 @@ const (
 )
 
 var (
-	ReasonNormal            = errors.New("normal close")
-	ReasonTimeout           = errors.New("timeout")
-	ReasonErrored           = errors.New("errored")
-	ReasonForceStopped      = errors.New("force stopped")
+	//ReasonNormal            = errors.New("normal close")
+	//ReasonTimeout           = errors.New("timeout")
+	//ReasonErrored           = errors.New("errored")
+	//ReasonForceStopped      = errors.New("force stopped")
 	StreamNotAvailableError = errors.New("stream not available")
 )
 
 type Agent struct {
-	sugar         *zap.SugaredLogger
-	ctx           context.Context
-	ctxCancel     context.CancelFunc
-	stream        *Stream
-	streamStarted bool
+	sugar     *zap.SugaredLogger
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+	stream    *Stream
 	// The list of IPs watching the stream.
 	readIPs                       []string
 	ffmpegCmder                   FfmpegCmder
@@ -49,9 +48,6 @@ func (a *Agent) ReadIPs() []string {
 }
 func (a *Agent) AddIp(ip string) {
 	a.readIPs = append(a.readIPs, ip)
-}
-func (a *Agent) StreamStarted() bool {
-	return a.streamStarted
 }
 func (a *Agent) StreamUrl() string {
 	return a.stream.Url
@@ -111,8 +107,8 @@ func (a *Agent) Run() {
 					continue
 				}
 				a.sugar.Debugw("Stream poller: Done", "streamId", a.stream.Id)
-				a.streamStarted = true
-				a.stream.Listener.Status(a.stream, StreamStarted)
+				// TODO: is this proper notify?
+				a.stream.Listener.StreamStarted(a.stream)
 				return
 			}
 		}
@@ -126,7 +122,7 @@ func (a *Agent) Run() {
 		return
 	}
 	if waitError != nil {
-		a.Close(ReasonErrored, fmt.Sprintf("Failed to wait for stream to online: %v", waitError))
+		a.Close(Errored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
 		return
 	}
 
@@ -139,7 +135,8 @@ func (a *Agent) Run() {
 		a.stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
 		a.stream.GoneOnline = true
 
-		a.stream.Listener.Status(a.stream, GoneLive)
+		a.stream.Status = GoneLive
+		a.stream.Listener.Status(a.stream)
 	}
 
 	// Stop the dummy stream
@@ -172,28 +169,30 @@ func (a *Agent) Run() {
 
 			if streamErr != nil {
 				a.sugar.Debugw("Stream terminated", "streamId", a.stream.Id, "error", streamErr)
-				a.Close(ReasonErrored, streamErr.Error())
+				a.Close(Errored, streamErr)
 				return
 			}
 
-			a.Close(ReasonNormal, "")
+			a.Close(Fulfilled, nil)
 			return
 		}
 	}
 
 }
 
-func (a *Agent) Close(reason error, error string) {
+func (a *Agent) Close(reason EndedReason, error error) {
 	if a.ctx.Err() != nil {
 		return
 	}
 	a.ctxCancel()
 
-	if errors.Is(reason, ReasonForceStopped) {
-		a.stream.Listener.Status(a.stream, ForceStopped)
-	}
-	a.stream.Listener.Status(a.stream, Ended)
-	a.stream.Listener.Close(a.stream, reason)
+	//if reason == ForceStopped {
+	//	a.stream.Listener.Status(a.stream, ForceStopped)
+	//}
+	a.stream.EndedReason = &reason
+	a.stream.Status = Ended
+	a.stream.Listener.Status(a.stream)
+	a.stream.Listener.Close(a.stream)
 
 	a.sugar.Debugw("Agent closed", "streamId", a.stream.Id, "reason", reason, "error", error)
 }
@@ -214,12 +213,12 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 		dummyFfmpegCmd.SetStderr(&dummyFfmpegCombinedBuf)
 		err := dummyFfmpegCmd.Start()
 		if err != nil {
-			a.Close(ReasonErrored, fmt.Sprintf("failed to start dummy stream ffmpeg: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
+			a.Close(Errored, fmt.Errorf("failed to start dummy stream ffmpeg: %w; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
 			return
 		}
 		err = dummyFfmpegCmd.Wait()
 		if err != nil {
-			a.Close(ReasonErrored, fmt.Sprintf("failed to wait for dummy stream ffmpeg cmd: %v; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
+			a.Close(Errored, fmt.Errorf("failed to wait for dummy stream ffmpeg cmd: %w; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
 			return
 		}
 
@@ -227,7 +226,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 			return
 		}
 
-		a.Close(ReasonErrored, fmt.Sprintf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf.String()))
+		a.Close(Errored, fmt.Errorf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf.String()))
 		return
 	}()
 }
@@ -259,12 +258,12 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 				streamerFfmpegCmd.SetStderr(&streamerFfmpegErrBuf)
 				err := streamerFfmpegCmd.Start()
 				if err != nil {
-					a.Close(ReasonErrored, fmt.Sprintf("failed to start ffmpeg cmd: %v", err))
+					a.Close(Errored, fmt.Errorf("failed to start ffmpeg cmd: %w", err))
 					return
 				}
 				err = streamerFfmpegCmd.Wait()
 				if err != nil {
-					a.Close(ReasonErrored, fmt.Sprintf("failed to wait for ffmpeg cmd: %v", err))
+					a.Close(Errored, fmt.Errorf("failed to wait for ffmpeg cmd: %w", err))
 					return
 				}
 
@@ -278,7 +277,7 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 					continue
 				}
 
-				a.Close(ReasonErrored, fmt.Sprintf("stream ffmpeg failed: %v", streamerFfmpegErrBuf.String()))
+				a.Close(Errored, fmt.Errorf("stream ffmpeg failed: %v", streamerFfmpegErrBuf.String()))
 				return
 			}
 		}
@@ -290,10 +289,6 @@ func (a *Agent) checkTimeout() {
 	clock := b.config.Clock
 	if clock.Now().After(a.stream.ScheduledEndAt) {
 		a.sugar.Debugw("Agent timed out", "streamId", a.stream.Id)
-
-		a.stream.Listener.Status(a.stream, Timeout)
-
-		a.Close(ReasonTimeout, "")
-
+		a.Close(Timeout, nil)
 	}
 }

@@ -1,7 +1,6 @@
 package discord
 
 import (
-	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster"
@@ -14,16 +13,17 @@ type StreamMessageContent struct {
 	Embeds     []*discordgo.MessageEmbed
 }
 
-func (bot *Bot) MakeStreamEndedMessage(url string, reason error) *StreamMessageContent {
+func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReason) *StreamMessageContent {
 	var desc string
 	switch {
 	// TODO: show if the streamer never went online
-	case errors.Is(reason, broadcaster.ReasonNormal):
-	case errors.Is(reason, broadcaster.ReasonTimeout):
+	case reason == broadcaster.Fulfilled:
 		desc = "The stream had ended."
-	case errors.Is(reason, broadcaster.ReasonForceStopped):
-		desc = "The stream catch has been stopped."
-	case errors.Is(reason, broadcaster.ReasonErrored):
+	case reason == broadcaster.Timeout:
+		desc = "The stream did not come online in time."
+	case reason == broadcaster.ForceStopped:
+		desc = "The stream catch has been stopped by the user."
+	case reason == broadcaster.Errored:
 		desc = "An error has occurred."
 	default:
 		desc = "The stream catch was stopped for unknown reason."

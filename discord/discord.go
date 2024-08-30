@@ -192,7 +192,7 @@ func New(sugar *zap.SugaredLogger) *Bot {
 					return
 				}
 
-				a.Close(broadcaster.ReasonForceStopped, "")
+				a.Close(broadcaster.ForceStopped, nil)
 
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,
