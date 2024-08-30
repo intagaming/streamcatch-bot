@@ -69,7 +69,6 @@ type Stream struct {
 	CreatedAt      time.Time
 	ScheduledEndAt time.Time
 	TerminatedAt   time.Time
-	GoneOnline     bool
 	Status         StreamStatus
 	EndedReason    *EndedReason
 	Listener       StreamStatusListener

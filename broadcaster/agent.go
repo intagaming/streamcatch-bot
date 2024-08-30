@@ -19,10 +19,6 @@ const (
 )
 
 var (
-	//ReasonNormal            = errors.New("normal close")
-	//ReasonTimeout           = errors.New("timeout")
-	//ReasonErrored           = errors.New("errored")
-	//ReasonForceStopped      = errors.New("force stopped")
 	StreamNotAvailableError = errors.New("stream not available")
 )
 
@@ -32,23 +28,27 @@ type Agent struct {
 	ctxCancel context.CancelFunc
 	stream    *Stream
 	// The list of IPs watching the stream.
-	readIPs                       []string
+	//readIPs                       []string
 	ffmpegCmder                   FfmpegCmder
 	dummyStreamFfmpegCmderCreator func(ctx context.Context) DummyStreamFfmpegCmder
 }
 
+// TODO: remove getters
 func (a *Agent) ScheduledEndAt() time.Time {
 	return a.stream.ScheduledEndAt
 }
-func (a *Agent) GoneOnline() bool {
-	return a.stream.GoneOnline
-}
-func (a *Agent) ReadIPs() []string {
-	return a.readIPs
-}
-func (a *Agent) AddIp(ip string) {
-	a.readIPs = append(a.readIPs, ip)
-}
+
+//func (a *Agent) GoneOnline() bool {
+//	return a.stream.GoneOnline
+//}
+
+//	func (a *Agent) ReadIPs() []string {
+//		return a.readIPs
+//	}
+//
+//	func (a *Agent) AddIp(ip string) {
+//		a.readIPs = append(a.readIPs, ip)
+//	}
 func (a *Agent) StreamUrl() string {
 	return a.stream.Url
 }
@@ -129,11 +129,10 @@ func (a *Agent) Run() {
 	// Now that stream came online, start streaming
 
 	// Set stream gone online, and set timeout for the stream
-	if !a.stream.GoneOnline {
+	if a.stream.Status != GoneLive {
 		a.sugar.Debugw("Stream gone online", "streamId", a.stream.Id)
 
 		a.stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
-		a.stream.GoneOnline = true
 
 		a.stream.Status = GoneLive
 		a.stream.Listener.Status(a.stream)
@@ -222,7 +221,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 			return
 		}
 
-		if a.stream.GoneOnline || ctx.Err() != nil {
+		if a.stream.Status == GoneLive || ctx.Err() != nil {
 			return
 		}
 

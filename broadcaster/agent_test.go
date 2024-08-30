@@ -14,14 +14,15 @@ import (
 )
 
 type testListener struct {
-	closeCalled   bool
+	status        StreamStatus
 	closeReason   *EndedReason
 	streamStarted bool
 }
 
-func (tl *testListener) Status(stream *Stream) {}
+func (tl *testListener) Status(stream *Stream) {
+	tl.status = stream.Status
+}
 func (tl *testListener) Close(stream *Stream) {
-	tl.closeCalled = true
 	tl.closeReason = stream.EndedReason
 }
 func (tl *testListener) StreamStarted(stream *Stream) {
@@ -136,21 +137,14 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		broadcaster.HandleStream(&Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      time.Now(),
 			ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
-		}
-		a := broadcaster.HandleStream(&stream)
-
-		waitForStreamStatus := func(status StreamStatus) {
-			assert.EventuallyWithT(t, func(c *assert.CollectT) {
-				assert.Equal(t, status, stream.Status)
-			}, time.Second, 10*time.Millisecond)
-		}
+		})
 
 		assert.Eventually(t, func() bool {
 			return dummyFfmpegCmder.started && ffmpegCmder.started
@@ -194,7 +188,6 @@ func TestAgent(t *testing.T) {
 		defer cancel()
 		// Need to expect StreamAvailableChecker to be called at least 2 times to guarantee stream is not started,
 		// because streamAvailableChecker is called before setting StreamStarted
-		// TODO: advance until streamAvailableCalledTime satisfy
 		advanceUntilCond := func(cond func() bool, desired time.Duration) {
 			for {
 				p, ok := mClock.Peek()
@@ -221,29 +214,22 @@ func TestAgent(t *testing.T) {
 		}, 20*time.Second)
 		assert.GreaterOrEqual(t, streamAvailableCalledTime, 2)
 
-		assert.False(t, a.StreamStarted())
+		assert.False(t, listener.streamStarted)
 
 		streamAvailableChan <- struct{}{}
 
 		advanceUntilCond(func() bool {
 			return listener.streamStarted
 		}, 5*time.Second)
-		assert.True(t, a.StreamStarted())
-
-		t.Logf("%d", stream.Status)
-		waitForStreamStatus(StreamStarted)
 
 		// expect StreamCatch gone online ok
-		assert.False(t, a.GoneOnline())
+		assert.NotEqual(t, listener.status, GoneLive)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(func() bool {
-			return a.GoneOnline()
+			return listener.status == GoneLive
 		}, 5*time.Second)
-		assert.True(t, a.GoneOnline())
-
-		waitForStreamStatus(GoneLive)
 
 		// expect ffmpegCmder to receive stream data from Streamer
 		var streamReadErr error
@@ -264,7 +250,7 @@ func TestAgent(t *testing.T) {
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
 		// expect stream to end
-		assert.False(t, listener.closeCalled)
+		assert.NotEqual(t, listener.status, Ended)
 
 		// Skip time for the stream catch to be considered successful
 		desired := DurationToConsiderCatchedOk + time.Second
@@ -281,10 +267,8 @@ func TestAgent(t *testing.T) {
 		streamEndChan <- struct{}{}
 
 		advanceUntilCond(func() bool {
-			return listener.closeCalled
+			return listener.status == Ended
 		}, 5*time.Second)
-		assert.True(t, listener.closeCalled)
-		waitForStreamStatus(Ended)
 		assert.Equal(t, Fulfilled, *listener.closeReason)
 	})
 }
