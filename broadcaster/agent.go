@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	MaxRetries                  = 3
-	LiveDuration                = 10 * time.Minute
-	DurationToConsiderCatchedOk = 30 * time.Second
+	MaxRetries                         = 3
+	LiveDuration                       = 10 * time.Minute
+	DurationToConsiderStreamWentOnline = 30 * time.Second
 )
 
 var (
@@ -93,7 +93,7 @@ func (a *Agent) Run() {
 			return nil
 		}
 
-		retryTimer := clock.NewTicker(2 * time.Second)
+		retryTimer := clock.NewTimer(0)
 		defer retryTimer.Stop()
 		for {
 			select {
@@ -103,11 +103,10 @@ func (a *Agent) Run() {
 				err := try()
 				if err != nil {
 					a.sugar.Debugw("Stream poller: Failed to get stream info. Retrying", "streamId", a.stream.Id, "error", err)
-					//retryTimer.Reset(3 * time.Second)
+					retryTimer.Reset(3 * time.Second)
 					continue
 				}
 				a.sugar.Debugw("Stream poller: Done", "streamId", a.stream.Id)
-				// TODO: is this proper notify?
 				a.stream.Listener.StreamStarted(a.stream)
 				return
 			}
@@ -159,7 +158,7 @@ func (a *Agent) Run() {
 
 			retryEndTime := clock.Now()
 
-			if attempt < MaxRetries && retryEndTime.Sub(retryStartTime) < DurationToConsiderCatchedOk {
+			if attempt < MaxRetries && retryEndTime.Sub(retryStartTime) < DurationToConsiderStreamWentOnline {
 				a.sugar.Debugw("Retrying getting stream", "streamId", a.stream.Id, "url", a.stream.Url)
 				attempt++
 				timer.Reset(10 * time.Second)
@@ -172,11 +171,10 @@ func (a *Agent) Run() {
 				return
 			}
 
-			a.Close(Fulfilled, nil)
+			a.Close(StreamEnded, nil)
 			return
 		}
 	}
-
 }
 
 func (a *Agent) Close(reason EndedReason, error error) {
@@ -287,7 +285,15 @@ func (a *Agent) checkTimeout() {
 	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
 	clock := b.config.Clock
 	if clock.Now().After(a.stream.ScheduledEndAt) {
-		a.sugar.Debugw("Agent timed out", "streamId", a.stream.Id)
-		a.Close(Timeout, nil)
+		if a.stream.Status == GoneLive {
+			a.sugar.Debugw("Agent fulfilled", "streamId", a.stream.Id)
+			a.Close(Fulfilled, nil)
+			return
+		}
+		if a.stream.Status == Waiting {
+			a.sugar.Debugw("Agent timeout", "streamId", a.stream.Id)
+			a.Close(Timeout, nil)
+			return
+		}
 	}
 }

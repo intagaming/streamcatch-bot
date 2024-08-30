@@ -17,7 +17,7 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 	var desc string
 	switch {
 	// TODO: show if the streamer never went online
-	case reason == broadcaster.Fulfilled:
+	case reason == broadcaster.StreamEnded:
 		desc = "The stream had ended."
 	case reason == broadcaster.Timeout:
 		desc = "The stream did not come online in time."

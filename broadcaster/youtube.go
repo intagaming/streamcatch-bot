@@ -26,7 +26,7 @@ func WaitForYoutubeOnline(sugar *zap.SugaredLogger, ctx context.Context, stream 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, nil
+			return nil, contextCancelledErr
 		case <-ticker.C:
 			statusCheckCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "-j")
 			output, _ := statusCheckCmd.CombinedOutput()

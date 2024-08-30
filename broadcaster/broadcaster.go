@@ -87,6 +87,7 @@ type EndedReason int
 const (
 	ForceStopped EndedReason = iota
 	Timeout
+	StreamEnded
 	Fulfilled
 	Errored
 )
@@ -177,6 +178,7 @@ func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) 
 	if !ok {
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
+	// TODO: notify streamwaiter
 	a.stream.ScheduledEndAt = newScheduledEndAt
 	return nil
 }

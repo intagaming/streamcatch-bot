@@ -15,6 +15,8 @@ import (
 	"github.com/nicklaw5/helix/v2"
 )
 
+var contextCancelledErr = errors.New("context canceled")
+
 func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) error {
 	u, err := url.Parse(stream.Url)
 	if err != nil {
@@ -31,7 +33,7 @@ func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixCli
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return contextCancelledErr
 		case <-ticker.C:
 			streams, err := helixClient.GetStreams(&helix.StreamsParams{
 				UserLogins: []string{streamerName},

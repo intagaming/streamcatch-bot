@@ -77,9 +77,33 @@ func (t *testDummyStreamFfmpegCmder) Wait() error {
 
 func TestAgent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	mClock := quartz.NewMock(t)
 
-	t.Run("FfmpegStreamHappyCase", func(t *testing.T) {
+	advanceUntilCond := func(mClock *quartz.Mock, cond func() bool, desired time.Duration) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for {
+			p, ok := mClock.Peek()
+			if !ok || p > desired {
+				mClock.Advance(desired).MustWait(ctx)
+				select {
+				case <-time.After(10 * time.Millisecond):
+				}
+				break
+			}
+			mClock.Advance(p).MustWait(ctx)
+			desired -= p
+			// Give time for agent's goroutine to catch the Ticker's channel
+			select {
+			case <-time.After(10 * time.Millisecond):
+			}
+			if cond() {
+				break
+			}
+		}
+	}
+
+	t.Run("HappyCase", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
 		ffmpegCmder := &testFfmpegCmder{}
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamAvailableChan := make(chan struct{}, 1)
@@ -110,12 +134,8 @@ func TestAgent(t *testing.T) {
 				}
 			},
 			StreamWaiter: func(agent *Agent) error {
-				select {
-				case <-ffmpegCmder.ctx.Done():
-					return errors.New("unexpected ffmpegCmder exit")
-				case <-streamGoneOnlineChan:
-					return nil
-				}
+				<-streamGoneOnlineChan
+				return nil
 			},
 			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
 				if streamerRetryUntilSuccess > 0 {
@@ -128,7 +148,7 @@ func TestAgent(t *testing.T) {
 				}
 				select {
 				case <-ctx.Done():
-					return errors.New("unexpected streamer context end; should not end")
+					return nil
 				case <-streamEndChan:
 				}
 				return nil
@@ -137,14 +157,15 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		broadcaster.HandleStream(&Stream{
+		stream := Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
-			CreatedAt:      time.Now(),
-			ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
-		})
+		}
+		broadcaster.HandleStream(&stream)
 
 		assert.Eventually(t, func() bool {
 			return dummyFfmpegCmder.started && ffmpegCmder.started
@@ -188,28 +209,7 @@ func TestAgent(t *testing.T) {
 		defer cancel()
 		// Need to expect StreamAvailableChecker to be called at least 2 times to guarantee stream is not started,
 		// because streamAvailableChecker is called before setting StreamStarted
-		advanceUntilCond := func(cond func() bool, desired time.Duration) {
-			for {
-				p, ok := mClock.Peek()
-				if !ok || p > desired {
-					mClock.Advance(desired).MustWait(ctx)
-					select {
-					case <-time.After(10 * time.Millisecond):
-					}
-					break
-				}
-				mClock.Advance(p).MustWait(ctx)
-				desired -= p
-				// Give time for agent's goroutine to catch the Ticker's channel
-				select {
-				case <-time.After(10 * time.Millisecond):
-				}
-				if cond() {
-					break
-				}
-			}
-		}
-		advanceUntilCond(func() bool {
+		advanceUntilCond(mClock, func() bool {
 			return streamAvailableCalledTime >= 2
 		}, 20*time.Second)
 		assert.GreaterOrEqual(t, streamAvailableCalledTime, 2)
@@ -218,7 +218,7 @@ func TestAgent(t *testing.T) {
 
 		streamAvailableChan <- struct{}{}
 
-		advanceUntilCond(func() bool {
+		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
 		}, 5*time.Second)
 
@@ -227,7 +227,7 @@ func TestAgent(t *testing.T) {
 
 		streamGoneOnlineChan <- struct{}{}
 
-		advanceUntilCond(func() bool {
+		advanceUntilCond(mClock, func() bool {
 			return listener.status == GoneLive
 		}, 5*time.Second)
 
@@ -239,7 +239,7 @@ func TestAgent(t *testing.T) {
 			_, streamReadErr = ffmpegCmder.stdin.Read(ffmpegCmderIn)
 			isRead = true
 		}()
-		advanceUntilCond(func() bool {
+		advanceUntilCond(mClock, func() bool {
 			return isRead
 		}, 30*time.Second)
 
@@ -249,11 +249,9 @@ func TestAgent(t *testing.T) {
 
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
-		// expect stream to end
 		assert.NotEqual(t, listener.status, Ended)
 
-		// Skip time for the stream catch to be considered successful
-		desired := DurationToConsiderCatchedOk + time.Second
+		desired := stream.ScheduledEndAt.Sub(mClock.Now()) + time.Minute
 		for {
 			p, ok := mClock.Peek()
 			if !ok || p > desired {
@@ -263,12 +261,60 @@ func TestAgent(t *testing.T) {
 			mClock.Advance(p).MustWait(ctx)
 			desired -= p
 		}
-
-		streamEndChan <- struct{}{}
-
-		advanceUntilCond(func() bool {
+		advanceUntilCond(mClock, func() bool {
 			return listener.status == Ended
-		}, 5*time.Second)
+		}, time.Second)
+		assert.NotNil(t, listener.closeReason)
 		assert.Equal(t, Fulfilled, *listener.closeReason)
+	})
+
+	t.Run("StreamNeverCameOnline", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		ffmpegCmder := &testFfmpegCmder{}
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+				ffmpegCmder.ctx = ctx
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId int64) (bool, error) {
+				return true, nil
+			},
+			StreamWaiter: func(agent *Agent) error {
+				select {}
+			},
+			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+				return errors.New("should not be called")
+			},
+			Clock: mClock,
+		})
+		listener := testListener{}
+
+		stream := Stream{
+			Id:             1,
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			Listener:       &listener,
+		}
+		broadcaster.HandleStream(&stream)
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.streamStarted
+		}, time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.status == Ended
+		}, stream.ScheduledEndAt.Sub(mClock.Now())+5*time.Second)
+		assert.NotNil(t, listener.closeReason)
+		assert.Equal(t, Timeout, *listener.closeReason)
 	})
 }
