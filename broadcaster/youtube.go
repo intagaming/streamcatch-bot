@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go.uber.org/zap"
 	"io"
 	"os/exec"
@@ -48,7 +49,7 @@ func WaitForYoutubeOnline(sugar *zap.SugaredLogger, ctx context.Context, stream 
 	}
 }
 
-func StreamFromYoutube(ctx context.Context, sugar *zap.SugaredLogger, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) {
+func StreamFromYoutube(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	streamlinkCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "720p60,720p,480p,360p",
 		"--loglevel", "warning", "--stdout")
 	streamlinkCmd.Stderr = streamlinkErrBuf
@@ -58,19 +59,31 @@ func StreamFromYoutube(ctx context.Context, sugar *zap.SugaredLogger, stream *St
 
 	pipe, err := streamlinkCmd.StdoutPipe()
 	if err != nil {
-		sugar.Panicw("Failed to create streamlink stdout pipe", "url", stream.Url, "error", err)
+		return fmt.Errorf("failed to create streamlink stdout pipe: %w", err)
 	}
 	ffmpegCmd.Stdin = pipe
 
 	ffmpegCmd.Stdout = pipeWrite
 	ffmpegCmd.Stderr = ffmpegErrBuf
 
-	// TODO: handle error
-	streamlinkCmd.Start()
-	ffmpegCmd.Start()
-
-	ffmpegCmd.Wait()
-	if streamlinkCmd.ProcessState == nil {
-		streamlinkCmd.Process.Kill()
+	err = streamlinkCmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start streamlink cmd: %w", err)
 	}
+	err = ffmpegCmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start ffmpeg cmd: %w", err)
+	}
+
+	err = ffmpegCmd.Wait()
+	if err != nil {
+		return fmt.Errorf("failed to wait for ffmpeg cmd: %w", err)
+	}
+	if streamlinkCmd.ProcessState == nil {
+		err := streamlinkCmd.Process.Kill()
+		if err != nil {
+			return fmt.Errorf("failed to kill streamlink cmd: %w", err)
+		}
+	}
+	return nil
 }

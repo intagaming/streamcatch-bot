@@ -15,11 +15,12 @@ import (
 const (
 	MaxRetries                         = 3
 	LiveDuration                       = 10 * time.Minute
-	DurationToConsiderStreamWentOnline = 30 * time.Second
+	DurationToConsiderStreamWentOnline = 3 * time.Minute
 )
 
 var (
 	StreamNotAvailableError = errors.New("stream not available")
+	FailedToStreamError     = errors.New("could not download stream from platform")
 )
 
 type Agent struct {
@@ -155,10 +156,14 @@ func (a *Agent) Run() {
 			retryStartTime := clock.Now()
 
 			streamErr := b.config.Streamer(a.ctx, a.stream, pipeWrite)
+			if errors.Is(streamErr, context.Canceled) {
+				return
+			}
 
 			retryEndTime := clock.Now()
+			streamDuration := retryEndTime.Sub(retryStartTime)
 
-			if attempt < MaxRetries && retryEndTime.Sub(retryStartTime) < DurationToConsiderStreamWentOnline {
+			if attempt <= MaxRetries && streamDuration < DurationToConsiderStreamWentOnline {
 				a.sugar.Debugw("Retrying getting stream", "streamId", a.stream.Id, "url", a.stream.Url)
 				attempt++
 				timer.Reset(10 * time.Second)
@@ -166,13 +171,19 @@ func (a *Agent) Run() {
 			}
 
 			if streamErr != nil {
-				a.sugar.Debugw("Stream terminated", "streamId", a.stream.Id, "error", streamErr)
+				a.sugar.Debugw("Stream error", "streamId", a.stream.Id, "error", streamErr)
 				a.Close(Errored, streamErr)
 				return
 			}
 
-			a.Close(StreamEnded, nil)
-			return
+			switch {
+			case streamDuration >= DurationToConsiderStreamWentOnline:
+				a.Close(StreamEnded, nil)
+			case attempt > MaxRetries:
+				a.Close(Errored, FailedToStreamError)
+			default:
+				panic("should not be here")
+			}
 		}
 	}
 }
@@ -188,6 +199,7 @@ func (a *Agent) Close(reason EndedReason, error error) {
 	//}
 	a.stream.EndedReason = &reason
 	a.stream.Status = Ended
+	a.stream.EndedError = error
 	a.stream.Listener.Status(a.stream)
 	a.stream.Listener.Close(a.stream)
 

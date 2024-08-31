@@ -71,6 +71,7 @@ type Stream struct {
 	TerminatedAt   time.Time
 	Status         StreamStatus
 	EndedReason    *EndedReason
+	EndedError     error
 	Listener       StreamStatusListener
 }
 

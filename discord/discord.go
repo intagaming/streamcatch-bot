@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/coder/quartz"
 	"github.com/nicklaw5/helix/v2"
@@ -110,22 +111,20 @@ func New(sugar *zap.SugaredLogger) *Bot {
 			var streamlinkErrBuf bytes.Buffer
 			var ffmpegErrBuf bytes.Buffer
 
+			var err error
 			if stream.Platform == "twitch" {
-				broadcaster.StreamFromTwitch(ctx, sugar, stream, twitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+				err = broadcaster.StreamFromTwitch(ctx, stream, twitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
 			} else if stream.Platform == "youtube" {
-				broadcaster.StreamFromYoutube(ctx, sugar, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+				err = broadcaster.StreamFromYoutube(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
 			} else if stream.Platform == "generic" {
-				broadcaster.StreamGeneric(ctx, sugar, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+				err = broadcaster.StreamGeneric(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
 			} else {
-				//a.sugar.Panicw("Unknown platform", "streamId", a.stream.Id, "platform", a.stream.Platform)
 				return errors.New("Unknown platform: " + stream.Platform)
 			}
-			if ctx.Err() != nil {
-				return nil
-			}
+			var ffmpegAndStreamlinkErrStr []byte
 
 			if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {
-				errorStr, err := json.Marshal(struct {
+				ffmpegAndStreamlinkErrStr, err = json.Marshal(struct {
 					StreamlinkError string `json:"streamlink_error,omitempty"`
 					FfmpegError     string `json:"ffmpeg_error,omitempty"`
 				}{
@@ -135,7 +134,10 @@ func New(sugar *zap.SugaredLogger) *Bot {
 				if err != nil {
 					sugar.Panicw("Failed to marshal error", "streamId", stream.Id, "error", err)
 				}
-				return errors.New("stream terminated with error: " + string(errorStr))
+			}
+
+			if err != nil {
+				return fmt.Errorf("errored while streaming from platform. FFMPEG and Streamlink output: %s; error: %w", ffmpegAndStreamlinkErrStr, err)
 			}
 
 			return nil
