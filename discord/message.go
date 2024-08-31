@@ -38,14 +38,14 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 				Description: desc,
 				Fields: []*discordgo.MessageEmbedField{
 					{
-						Name:  "Stream URL",
-						Value: url,
-					},
-					{
 						Name:  "Status",
 						Value: "🔴 Ended",
 					},
-					// TODO: expiration time
+					{
+						Name:   "Stream URL",
+						Value:  url,
+						Inline: true,
+					},
 				},
 			},
 		},
@@ -73,16 +73,18 @@ func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEn
 				URL:         link,
 				Fields: []*discordgo.MessageEmbedField{
 					{
-						Name:  "Stream URL",
-						Value: url,
-					},
-					{
 						Name:  "Status",
 						Value: "🟡 Waiting for stream to start",
 					},
 					{
-						Name:  "Catch until",
-						Value: scheduledEndAt.UTC().Format(time.RFC1123),
+						Name:   "Stream URL",
+						Value:  url,
+						Inline: true,
+					},
+					{
+						Name:   "Catch until",
+						Value:  scheduledEndAt.UTC().Format(time.RFC1123),
+						Inline: true,
 					},
 				},
 			},
@@ -121,12 +123,13 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 				URL:         link,
 				Fields: []*discordgo.MessageEmbedField{
 					{
-						Name:  "Stream URL",
-						Value: url,
-					},
-					{
 						Name:  "Status",
 						Value: "🟢 Online",
+					},
+					{
+						Name:   "Stream URL",
+						Value:  url,
+						Inline: true,
 					},
 				},
 			},
@@ -158,8 +161,9 @@ func (bot *Bot) MakeRequestReceivedMessage(url string) *StreamMessageContent {
 				Description: "Request to catch is received. Stay tuned for a followup!",
 				Fields: []*discordgo.MessageEmbedField{
 					{
-						Name:  "Stream URL",
-						Value: url,
+						Name:   "Stream URL",
+						Value:  url,
+						Inline: true,
 					},
 				},
 			},
