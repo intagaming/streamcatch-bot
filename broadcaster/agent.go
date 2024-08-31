@@ -15,7 +15,7 @@ import (
 const (
 	MaxRetries                         = 3
 	LiveDuration                       = 10 * time.Minute
-	DurationToConsiderStreamWentOnline = 3 * time.Minute
+	DurationToConsiderStreamWentOnline = 30 * time.Second
 )
 
 var (
@@ -227,6 +227,9 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 		}
 		err = dummyFfmpegCmd.Wait()
 		if err != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return
+			}
 			a.Close(Errored, fmt.Errorf("failed to wait for dummy stream ffmpeg cmd: %w; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
 			return
 		}

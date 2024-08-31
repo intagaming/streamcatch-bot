@@ -32,9 +32,8 @@ func (tl *testListener) StreamStarted(stream *Stream) {
 }
 
 type testFfmpegCmder struct {
-	ctx     context.Context
-	stdin   io.Reader
-	started bool
+	ctx   context.Context
+	stdin io.Reader
 }
 
 func (t *testFfmpegCmder) SetStdin(pipe io.Reader) {
@@ -45,19 +44,19 @@ func (t *testFfmpegCmder) SetStderr(pipe io.Writer) {
 }
 
 func (t *testFfmpegCmder) Start() error {
-	t.started = true
-	return nil
+	return t.ctx.Err()
 }
 
 func (t *testFfmpegCmder) Wait() error {
 	<-t.ctx.Done()
-	return nil
+	return t.ctx.Err()
 }
 
 type testDummyStreamFfmpegCmder struct {
-	ctx     context.Context
-	stdout  io.Writer
-	started bool
+	ctx             context.Context
+	stdout          io.Writer
+	waitToStart     bool
+	waitToStartChan chan struct{}
 }
 
 func (t *testDummyStreamFfmpegCmder) SetStdout(pipe io.Writer) {
@@ -68,13 +67,18 @@ func (t *testDummyStreamFfmpegCmder) SetStderr(pipe io.Writer) {
 }
 
 func (t *testDummyStreamFfmpegCmder) Start() error {
-	t.started = true
-	return nil
+	if t.waitToStart {
+		select {
+		case <-t.waitToStartChan:
+		case <-t.ctx.Done():
+		}
+	}
+	return t.ctx.Err()
 }
 
 func (t *testDummyStreamFfmpegCmder) Wait() error {
 	<-t.ctx.Done()
-	return nil
+	return t.ctx.Err()
 }
 
 func TestAgent(t *testing.T) {
@@ -166,9 +170,14 @@ func TestAgent(t *testing.T) {
 		}
 		broadcaster.HandleStream(&stream)
 
-		assert.Eventually(t, func() bool {
-			return dummyFfmpegCmder.started && ffmpegCmder.started
-		}, time.Second, 10*time.Millisecond)
+		// expect StreamCatch stream available
+		assert.False(t, listener.streamStarted)
+
+		streamAvailableChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.streamStarted
+		}, 5*time.Second)
 
 		// expect ffmpeg stream to receive dummy stream outputs
 		dummyOutData := []byte{1, 2, 3, 4, 5}
@@ -202,22 +211,6 @@ func TestAgent(t *testing.T) {
 		}
 
 		assert.Equal(t, dummyOutData, ffmpegCmderIn)
-
-		// expect StreamCatch stream available
-		// Need to expect StreamAvailableChecker to be called at least 2 times to guarantee stream is not started,
-		// because streamAvailableChecker is called before setting StreamStarted
-		advanceUntilCond(mClock, func() bool {
-			return streamAvailableCalledTime >= 2
-		}, 20*time.Second)
-		assert.GreaterOrEqual(t, streamAvailableCalledTime, 2)
-
-		assert.False(t, listener.streamStarted)
-
-		streamAvailableChan <- struct{}{}
-
-		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
-		}, 5*time.Second)
 
 		// expect StreamCatch gone online ok
 		assert.NotEqual(t, listener.status, GoneLive)
@@ -518,6 +511,59 @@ func TestAgent(t *testing.T) {
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
 		}, 5*time.Second)
+
+		// We're happy if there's no runtime error so far.
+	})
+
+	t.Run("StreamCatchStoppedBeforeDummyStreamStarts", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		ffmpegCmder := &testFfmpegCmder{}
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+		streamAvailableChan := make(chan struct{}, 1)
+		streamGoneOnlineChan := make(chan struct{}, 1)
+
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+				ffmpegCmder.ctx = ctx
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx:         ctx,
+					waitToStart: true,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId int64) (bool, error) {
+				select {
+				case <-streamAvailableChan:
+					return true, nil
+				default:
+					return false, nil
+				}
+			},
+			StreamWaiter: func(agent *Agent) error {
+				<-streamGoneOnlineChan
+				return nil
+			},
+			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+				return errors.New("should not go here")
+			},
+			Clock: mClock,
+		})
+		listener := testListener{}
+
+		stream := Stream{
+			Id:             1,
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			Listener:       &listener,
+		}
+		agent := broadcaster.HandleStream(&stream)
+
+		agent.Close(ForceStopped, nil)
 
 		// We're happy if there's no runtime error so far.
 	})

@@ -21,6 +21,8 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 		desc = "The stream had ended."
 	case reason == broadcaster.Timeout:
 		desc = "The stream did not come online in time."
+	case reason == broadcaster.Fulfilled:
+		desc = "Stream was catch successfully. Catch you on the next one!"
 	case reason == broadcaster.ForceStopped:
 		desc = "The stream catch has been stopped by the user."
 	case reason == broadcaster.Errored:
@@ -112,7 +114,6 @@ func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEn
 func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMessageContent {
 	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, streamId)
 	return &StreamMessageContent{
-		Content: fmt.Sprintf("URL: _`%s`_\n**StreamCatch stream is ready!** [Click here to watch.](%s)\nStatus: 🟢 Online", url, link),
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
@@ -133,6 +134,11 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label: "Watch",
+						Style: discordgo.LinkButton,
+						URL:   link,
+					},
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
