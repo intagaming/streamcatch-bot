@@ -132,9 +132,6 @@ func MakeStream(ctx context.Context, url string, listener StreamStatusListener) 
 		platform = "generic"
 	}
 
-	// if platform == "" {
-	// 	return nil, errInvalidUrl
-	// }
 	idCount += 1
 	return &Stream{
 		Id:             idCount,
@@ -155,7 +152,7 @@ func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
 		sugar:       b.sugar,
 		ctx:         ctx,
 		ctxCancel:   cancel,
-		stream:      stream,
+		Stream:      stream,
 		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
 		dummyStreamFfmpegCmderCreator: func(ctx context.Context) DummyStreamFfmpegCmder {
 			return b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url)
@@ -164,11 +161,11 @@ func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
 
 	go agent.Run()
 
-	b.agents[agent.stream.Id] = &agent
+	b.agents[agent.Stream.Id] = &agent
 
 	go func() {
 		<-ctx.Done()
-		delete(b.agents, agent.stream.Id)
+		delete(b.agents, agent.Stream.Id)
 	}()
 
 	return &agent
@@ -179,22 +176,20 @@ func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) 
 	if !ok {
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
-	// TODO: notify streamwaiter
-	a.stream.ScheduledEndAt = newScheduledEndAt
+	a.Stream.ScheduledEndAt = newScheduledEndAt
 	return nil
 }
 
 func NewRealStreamWaiter(sugar *zap.SugaredLogger, helixClient *helix.Client, a *Agent) error {
 	var err error
-	if a.stream.Platform == "twitch" {
-		err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.stream)
-	} else if a.stream.Platform == "youtube" {
-		_, err = WaitForYoutubeOnline(sugar, a.ctx, a.stream)
-	} else if a.stream.Platform == "generic" {
-		_, err = WaitForGenericOnline(sugar, a.ctx, a.stream)
+	if a.Stream.Platform == "twitch" {
+		err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.Stream)
+	} else if a.Stream.Platform == "youtube" {
+		_, err = WaitForYoutubeOnline(sugar, a.ctx, a.Stream)
+	} else if a.Stream.Platform == "generic" {
+		_, err = WaitForGenericOnline(sugar, a.ctx, a.Stream)
 	} else {
-		//a.sugar.Panicw("Unknown platform", "streamId", a.stream.Id, "platform", a.stream.Platform)
-		return errors.New("Unknown platform: " + a.stream.Platform)
+		return errors.New("Unknown platform: " + a.Stream.Platform)
 	}
 	return err
 }

@@ -16,7 +16,6 @@ type StreamMessageContent struct {
 func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReason) *StreamMessageContent {
 	var desc string
 	switch {
-	// TODO: show if the streamer never went online
 	case reason == broadcaster.StreamEnded:
 		desc = "The stream had ended."
 	case reason == broadcaster.Timeout:

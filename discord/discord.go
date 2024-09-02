@@ -239,8 +239,8 @@ func New(sugar *zap.SugaredLogger) *Bot {
 				}
 
 				newScheduledEndAt := time.Now().Add(ExtendDuration)
-				if a.ScheduledEndAt().After(newScheduledEndAt) {
-					newScheduledEndAt = a.ScheduledEndAt()
+				if a.Stream.ScheduledEndAt.After(newScheduledEndAt) {
+					newScheduledEndAt = a.Stream.ScheduledEndAt
 				}
 
 				err = bot.broadcaster.RefreshAgent(streamId, newScheduledEndAt)
@@ -258,7 +258,7 @@ func New(sugar *zap.SugaredLogger) *Bot {
 					return
 				}
 
-				streamStartedMessage := bot.MakeStreamStartedMessage(a.StreamUrl(), streamId, newScheduledEndAt)
+				streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream.Url, streamId, newScheduledEndAt)
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseUpdateMessage,
 					Data: &discordgo.InteractionResponseData{
@@ -325,7 +325,6 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 }
 
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
-	// TODO: real interrupt context
 	ctx := context.Background()
 	sl := bot.NewStreamListener(i)
 	stream, err := broadcaster.MakeStream(ctx, url, sl)
