@@ -17,14 +17,14 @@ import (
 
 var contextCancelledErr = errors.New("context canceled")
 
-func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) error {
+func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) (*helix.Stream, error) {
 	u, err := url.Parse(stream.Url)
 	if err != nil {
-		return errors.New("failed to parse url")
+		return nil, errors.New("failed to parse url")
 	}
 	paths := strings.Split(u.Path, "/")
 	if len(paths) == 0 {
-		return errors.New("couldn't find Twitch streamer name")
+		return nil, errors.New("couldn't find Twitch streamer name")
 	}
 	streamerName := paths[1]
 
@@ -33,7 +33,7 @@ func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixCli
 	for {
 		select {
 		case <-ctx.Done():
-			return contextCancelledErr
+			return nil, contextCancelledErr
 		case <-ticker.C:
 			streams, err := helixClient.GetStreams(&helix.StreamsParams{
 				UserLogins: []string{streamerName},
@@ -49,7 +49,7 @@ func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixCli
 			}
 			// Now online
 			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "id", streams.Data.Streams[0].ID)
-			return nil
+			return &streams.Data.Streams[0], nil
 		}
 	}
 }
