@@ -34,6 +34,9 @@ func (b *Broadcaster) MediaServerPublishPassword() string {
 
 type broadcasterCtxKey struct{}
 
+type StreamInfo struct {
+	ThumbnailUrl string
+}
 type Config struct {
 	TwitchClientId                string
 	TwitchClientSecret            string
@@ -49,6 +52,7 @@ type Config struct {
 	Helix                         *helix.Client
 	Streamer                      func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error
 	Clock                         quartz.Clock
+	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
@@ -73,6 +77,7 @@ type Stream struct {
 	EndedReason    *EndedReason
 	EndedError     error
 	Listener       StreamStatusListener
+	ThumbnailUrl   string
 }
 
 type StreamStatus int
@@ -109,7 +114,7 @@ const (
 	ScheduledEndDuration = 30 * time.Minute
 )
 
-func MakeStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
+func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
 	checkCmd := exec.CommandContext(ctx, "streamlink", "--can-handle-url", url)
 	err := checkCmd.Run()
 	if err != nil {
@@ -133,14 +138,22 @@ func MakeStream(ctx context.Context, url string, listener StreamStatusListener) 
 	}
 
 	idCount += 1
-	return &Stream{
+	stream := Stream{
 		Id:             idCount,
 		Url:            url,
 		Platform:       platform,
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,
-	}, nil
+	}
+
+	info, err := b.config.StreamerInfoFetcher(ctx, &stream)
+	if err != nil {
+		return nil, err
+	}
+	stream.ThumbnailUrl = info.ThumbnailUrl
+
+	return &stream, nil
 }
 
 func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
@@ -183,7 +196,7 @@ func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) 
 func NewRealStreamWaiter(sugar *zap.SugaredLogger, helixClient *helix.Client, a *Agent) error {
 	var err error
 	if a.Stream.Platform == "twitch" {
-		err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.Stream)
+		_, err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.Stream)
 	} else if a.Stream.Platform == "youtube" {
 		_, err = WaitForYoutubeOnline(sugar, a.ctx, a.Stream)
 	} else if a.Stream.Platform == "generic" {

@@ -112,13 +112,14 @@ func New(sugar *zap.SugaredLogger) *Bot {
 			var ffmpegErrBuf bytes.Buffer
 
 			var err error
-			if stream.Platform == "twitch" {
+			switch {
+			case stream.Platform == "twitch":
 				err = broadcaster.StreamFromTwitch(ctx, stream, twitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-			} else if stream.Platform == "youtube" {
+			case stream.Platform == "youtube":
 				err = broadcaster.StreamFromYoutube(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-			} else if stream.Platform == "generic" {
+			case stream.Platform == "generic":
 				err = broadcaster.StreamGeneric(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-			} else {
+			default:
 				return errors.New("Unknown platform: " + stream.Platform)
 			}
 			var ffmpegAndStreamlinkErrStr []byte
@@ -141,6 +142,18 @@ func New(sugar *zap.SugaredLogger) *Bot {
 			}
 
 			return nil
+		},
+		StreamerInfoFetcher: func(ctx context.Context, stream *broadcaster.Stream) (*broadcaster.StreamInfo, error) {
+			switch stream.Platform {
+			case "twitch":
+				info, err := broadcaster.FetchTwitchStreamerInfo(helixClient, stream.Url)
+				if err != nil {
+					return nil, err
+				}
+				return &broadcaster.StreamInfo{ThumbnailUrl: info.ProfileImageURL}, nil
+			default:
+				return &broadcaster.StreamInfo{}, nil
+			}
 		},
 		Clock: quartz.NewReal(),
 	})
@@ -258,7 +271,7 @@ func New(sugar *zap.SugaredLogger) *Bot {
 					return
 				}
 
-				streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream.Url, streamId, newScheduledEndAt)
+				streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream)
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseUpdateMessage,
 					Data: &discordgo.InteractionResponseData{
@@ -327,7 +340,7 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
 	ctx := context.Background()
 	sl := bot.NewStreamListener(i)
-	stream, err := broadcaster.MakeStream(ctx, url, sl)
+	stream, err := bot.broadcaster.MakeStream(ctx, url, sl)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
 		err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
@@ -346,7 +359,7 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
 
 	bot.broadcaster.HandleStream(stream)
 
-	msg := bot.MakeRequestReceivedMessage(url)
+	msg := bot.MakeRequestReceivedMessage(stream)
 	err = bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{

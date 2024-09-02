@@ -28,11 +28,11 @@ func (sl *StreamListener) UpdateStreamCatchMessage(stream *broadcaster.Stream) {
 	var msg *StreamMessageContent
 	switch stream.Status {
 	case broadcaster.Waiting:
-		msg = sl.bot.MakeStreamStartedMessage(stream.Url, stream.Id, stream.ScheduledEndAt)
+		msg = sl.bot.MakeStreamStartedMessage(stream)
 	case broadcaster.GoneLive:
-		msg = sl.bot.MakeStreamGoneLiveMessage(stream.Url, stream.Id)
+		msg = sl.bot.MakeStreamGoneLiveMessage(stream)
 	case broadcaster.Ended:
-		msg = sl.bot.MakeStreamEndedMessage(stream.Url, *stream.EndedReason)
+		msg = sl.bot.MakeStreamEndedMessage(stream)
 	default:
 		sl.bot.sugar.Fatalf("Unknown stream status: %d", stream.Status)
 		return

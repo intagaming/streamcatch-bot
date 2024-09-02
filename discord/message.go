@@ -13,18 +13,18 @@ type StreamMessageContent struct {
 	Embeds     []*discordgo.MessageEmbed
 }
 
-func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReason) *StreamMessageContent {
+func (bot *Bot) MakeStreamEndedMessage(stream *broadcaster.Stream) *StreamMessageContent {
 	var desc string
-	switch {
-	case reason == broadcaster.StreamEnded:
+	switch *stream.EndedReason {
+	case broadcaster.StreamEnded:
 		desc = "The stream had ended."
-	case reason == broadcaster.Timeout:
+	case broadcaster.Timeout:
 		desc = "The stream did not come online in time."
-	case reason == broadcaster.Fulfilled:
+	case broadcaster.Fulfilled:
 		desc = "Stream was catch successfully. Catch you on the next one!"
-	case reason == broadcaster.ForceStopped:
+	case broadcaster.ForceStopped:
 		desc = "The stream catch has been stopped by the user."
-	case reason == broadcaster.Errored:
+	case broadcaster.Errored:
 		desc = "An error has occurred."
 	default:
 		desc = "The stream catch was stopped for unknown reason."
@@ -35,6 +35,9 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 			{
 				Title:       "StreamCatch",
 				Description: desc,
+				Thumbnail: &discordgo.MessageEmbedThumbnail{
+					URL: stream.ThumbnailUrl,
+				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
 						Name:  "Status",
@@ -42,7 +45,7 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 					},
 					{
 						Name:   "Stream URL",
-						Value:  url,
+						Value:  stream.Url,
 						Inline: true,
 					},
 				},
@@ -54,7 +57,7 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 					discordgo.Button{
 						Label:    "Re-catch",
 						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("recatch_%s", url),
+						CustomID: fmt.Sprintf("recatch_%s", stream.Url),
 					},
 				},
 			},
@@ -62,14 +65,17 @@ func (bot *Bot) MakeStreamEndedMessage(url string, reason broadcaster.EndedReaso
 	}
 }
 
-func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEndAt time.Time) *StreamMessageContent {
-	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, streamId)
+func (bot *Bot) MakeStreamStartedMessage(stream *broadcaster.Stream) *StreamMessageContent {
+	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, stream.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
 				Description: "Ready to catch! Join now.",
 				URL:         link,
+				Thumbnail: &discordgo.MessageEmbedThumbnail{
+					URL: stream.ThumbnailUrl,
+				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
 						Name:  "Status",
@@ -77,12 +83,12 @@ func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEn
 					},
 					{
 						Name:   "Stream URL",
-						Value:  url,
+						Value:  stream.Url,
 						Inline: true,
 					},
 					{
 						Name:   "Catch until",
-						Value:  scheduledEndAt.UTC().Format(time.RFC1123),
+						Value:  stream.ScheduledEndAt.UTC().Format(time.RFC1123),
 						Inline: true,
 					},
 				},
@@ -99,12 +105,12 @@ func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEn
 					discordgo.Button{
 						Label:    "Refresh",
 						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("refresh_%d", streamId),
+						CustomID: fmt.Sprintf("refresh_%d", stream.Id),
 					},
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%d", streamId),
+						CustomID: fmt.Sprintf("stop_%d", stream.Id),
 					},
 				},
 			},
@@ -112,14 +118,17 @@ func (bot *Bot) MakeStreamStartedMessage(url string, streamId int64, scheduledEn
 	}
 }
 
-func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMessageContent {
-	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, streamId)
+func (bot *Bot) MakeStreamGoneLiveMessage(stream *broadcaster.Stream) *StreamMessageContent {
+	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, stream.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
 				Description: "Streamer went online, watch now!",
 				URL:         link,
+				Thumbnail: &discordgo.MessageEmbedThumbnail{
+					URL: stream.ThumbnailUrl,
+				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
 						Name:  "Status",
@@ -127,7 +136,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 					},
 					{
 						Name:   "Stream URL",
-						Value:  url,
+						Value:  stream.Url,
 						Inline: true,
 					},
 				},
@@ -144,7 +153,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%d", streamId),
+						CustomID: fmt.Sprintf("stop_%d", stream.Id),
 					},
 				},
 			},
@@ -152,16 +161,19 @@ func (bot *Bot) MakeStreamGoneLiveMessage(url string, streamId int64) *StreamMes
 	}
 }
 
-func (bot *Bot) MakeRequestReceivedMessage(url string) *StreamMessageContent {
+func (bot *Bot) MakeRequestReceivedMessage(stream *broadcaster.Stream) *StreamMessageContent {
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
 				Description: "Request to catch is received. Stay tuned for a followup!",
+				Thumbnail: &discordgo.MessageEmbedThumbnail{
+					URL: stream.ThumbnailUrl,
+				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
 						Name:   "Stream URL",
-						Value:  url,
+						Value:  stream.Url,
 						Inline: true,
 					},
 				},

@@ -15,18 +15,47 @@ import (
 	"github.com/nicklaw5/helix/v2"
 )
 
-var contextCancelledErr = errors.New("context canceled")
+var (
+	contextCancelledErr = errors.New("context canceled")
+	malformedTwitchUrl  = errors.New("couldn't find Twitch streamer name")
+	channelNotFoundErr  = errors.New("channel not found")
+)
 
-func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) (*helix.Stream, error) {
-	u, err := url.Parse(stream.Url)
+func GetTwitchStreamerNameFromUrl(twitchUrl string) (string, error) {
+	u, err := url.Parse(twitchUrl)
 	if err != nil {
-		return nil, errors.New("failed to parse url")
+		return "", err
 	}
 	paths := strings.Split(u.Path, "/")
 	if len(paths) == 0 {
-		return nil, errors.New("couldn't find Twitch streamer name")
+		return "", malformedTwitchUrl
 	}
-	streamerName := paths[1]
+	return paths[1], nil
+}
+
+func FetchTwitchStreamerInfo(helixClient *helix.Client, url string) (*helix.User, error) {
+	streamerName, err := GetTwitchStreamerNameFromUrl(url)
+	if err != nil {
+		return nil, err
+	}
+	streams, err := helixClient.GetUsers(&helix.UsersParams{
+		IDs:    nil,
+		Logins: []string{streamerName},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(streams.Data.Users) == 0 {
+		return nil, channelNotFoundErr
+	}
+	return &streams.Data.Users[0], nil
+}
+
+func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) (*helix.Stream, error) {
+	streamerName, err := GetTwitchStreamerNameFromUrl(stream.Url)
+	if err != nil {
+		return nil, err
+	}
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
