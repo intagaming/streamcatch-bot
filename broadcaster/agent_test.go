@@ -140,7 +140,7 @@ func TestAgent(t *testing.T) {
 				<-streamGoneOnlineChan
 				return nil
 			},
-			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 				if streamerRetryUntilSuccess > 0 {
 					streamerRetryUntilSuccess -= 1
 					return errors.New("stream not available")
@@ -271,7 +271,7 @@ func TestAgent(t *testing.T) {
 			StreamWaiter: func(agent *Agent) error {
 				select {}
 			},
-			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 				return errors.New("should not be called")
 			},
 			Clock: mClock,
@@ -326,7 +326,7 @@ func TestAgent(t *testing.T) {
 				<-streamGoneOnlineChan
 				return nil
 			},
-			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 				streamerCalledTime += 1
 				if streamerCalledTime <= 1 {
 					<-streamerEndChan
@@ -400,7 +400,7 @@ func TestAgent(t *testing.T) {
 				<-streamGoneOnlineChan
 				return nil
 			},
-			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 				streamerCalledTime += 1
 				<-streamerEndChan
 				return nil
@@ -481,7 +481,7 @@ func TestAgent(t *testing.T) {
 				<-streamGoneOnlineChan
 				return nil
 			},
-			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 				return errors.New("should not go here")
 			},
 			Clock: mClock,
@@ -546,7 +546,7 @@ func TestAgent(t *testing.T) {
 				<-streamGoneOnlineChan
 				return nil
 			},
-			Streamer: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error {
+			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 				return errors.New("should not go here")
 			},
 			Clock: mClock,

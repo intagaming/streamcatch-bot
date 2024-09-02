@@ -1,12 +1,20 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
+	"fmt"
+	"github.com/coder/quartz"
+	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/discord"
 )
 
@@ -45,7 +53,130 @@ func main() {
 		sugar.Panic("ffmpeg not found")
 	}
 
-	bot := discord.New(sugar)
+	var twitchClientId = os.Getenv("TWITCH_CLIENT_ID")
+	if twitchClientId == "" {
+		sugar.Panic("TWITCH_CLIENT_ID is not set")
+	}
+	var twitchClientSecret = os.Getenv("TWITCH_CLIENT_SECRET")
+	if twitchClientSecret == "" {
+		sugar.Panic("TWITCH_CLIENT_SECRET is not set")
+	}
+	helixClient, err := helix.NewClient(&helix.Options{
+		ClientID:     twitchClientId,
+		ClientSecret: twitchClientSecret,
+	})
+	if err != nil {
+		sugar.Panicw("Failed to create helix client", "error", err)
+	}
+	// TODO: handle token refresh
+	resp, err := helixClient.RequestAppAccessToken([]string{"user:read:email"})
+	if err != nil {
+		sugar.Panicw("Failed to get twitch app access token", "error", err)
+	}
+	// Set the access token on the client
+	helixClient.SetAppAccessToken(resp.Data.AccessToken)
+
+	mediaServerRtspHost := os.Getenv("MEDIA_SERVER_RTSP_HOST")
+	if mediaServerRtspHost == "" {
+		sugar.Panic("MEDIA_SERVER_RTSP_HOST is not set")
+	}
+	mediaServerPublishUser := os.Getenv("MEDIA_SERVER_PUBLISH_USER")
+	if mediaServerPublishUser == "" {
+		sugar.Panic("MEDIA_SERVER_PUBLISH_USER is not set")
+	}
+	mediaServerPublishPassword := os.Getenv("MEDIA_SERVER_PUBLISH_PASSWORD")
+	if mediaServerPublishPassword == "" {
+		sugar.Panic("MEDIA_SERVER_PUBLISH_PASSWORD is not set")
+	}
+	mediaServerApiUrl := os.Getenv("MEDIA_SERVER_API_URL")
+	if mediaServerApiUrl == "" {
+		sugar.Panic("MEDIA_SERVER_API_URL is not set")
+	}
+	var twitchAuthToken = os.Getenv("TWITCH_AUTH_TOKEN")
+	if twitchAuthToken == "" {
+		sugar.Warn("TWITCH_AUTH_TOKEN is not set")
+	}
+
+	bc := broadcaster.New(sugar, &broadcaster.Config{
+		TwitchClientId:                twitchClientId,
+		TwitchClientSecret:            twitchClientSecret,
+		TwitchAuthToken:               twitchAuthToken,
+		MediaServerRtspHost:           mediaServerRtspHost,
+		MediaServerPublishUser:        mediaServerPublishUser,
+		MediaServerPublishPassword:    mediaServerPublishPassword,
+		MediaServerApiUrl:             mediaServerApiUrl,
+		FfmpegCmderCreator:            broadcaster.NewRealFfmpegCmder,
+		DummyStreamFfmpegCmderCreator: broadcaster.NewRealDummyStreamFfmpegCmder,
+		StreamAvailableChecker: func(streamId int64) (bool, error) {
+			resp, err := http.Get(mediaServerApiUrl + "/v3/paths/get/" + strconv.FormatInt(streamId, 10))
+			if err != nil {
+				return false, err
+			}
+			if resp.StatusCode != http.StatusOK {
+				return false, errors.New("response was not 200 but " + resp.Status)
+			}
+			return true, nil
+		},
+		StreamWaiter: func(agent *broadcaster.Agent) error {
+			return broadcaster.NewRealStreamWaiter(sugar, helixClient, agent)
+		},
+		Streamer: broadcaster.Streamer,
+		StreamerInfoFetcher: func(ctx context.Context, stream *broadcaster.Stream) (*broadcaster.StreamInfo, error) {
+			switch stream.Platform {
+			case "twitch":
+				info, err := broadcaster.FetchTwitchStreamerInfo(helixClient, stream.Url)
+				if err != nil {
+					return nil, err
+				}
+				return &broadcaster.StreamInfo{ThumbnailUrl: info.ProfileImageURL}, nil
+			default:
+				return &broadcaster.StreamInfo{}, nil
+			}
+		},
+		Clock: quartz.NewReal(),
+	})
+
+	bot := discord.New(sugar, bc)
+
+	if isDev {
+		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
+			stream, err := bc.MakeLocalStream(context.Background(), r.URL.Query().Get("url"), &localStreamListener{})
+			if err != nil {
+				panic(err)
+			}
+			bc.HandleStream(stream)
+			_, _ = w.Write([]byte(fmt.Sprintf("%d", stream.Id)))
+		})
+		http.HandleFunc("/local/online", func(w http.ResponseWriter, r *http.Request) {
+			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+			if err != nil {
+				sugar.Debugw("Failed to get stream id", "error", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			broadcaster.SetLocalOnline(streamId)
+		})
+		http.HandleFunc("/local/stop", func(w http.ResponseWriter, r *http.Request) {
+			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+			if err != nil {
+				sugar.Debugw("Failed to get stream id", "error", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			a, ok := bc.Agents()[streamId]
+			if !ok {
+				sugar.Debugw("Agent not found", "streamId", streamId)
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			a.Close(broadcaster.ForceStopped, nil)
+		})
+		go func() {
+			_ = http.ListenAndServe(":8080", nil)
+		}()
+	}
 
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, os.Interrupt)
@@ -55,4 +186,15 @@ func main() {
 	if err != nil {
 		sugar.Infof("could not close session gracefully: %s", err)
 	}
+}
+
+type localStreamListener struct{}
+
+func (l *localStreamListener) Status(stream *broadcaster.Stream) {
+}
+
+func (l *localStreamListener) StreamStarted(stream *broadcaster.Stream) {
+}
+
+func (l *localStreamListener) Close(stream *broadcaster.Stream) {
 }

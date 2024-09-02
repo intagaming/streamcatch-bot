@@ -133,7 +133,7 @@ func (a *Agent) Run() {
 		case <-timer.C:
 			retryStartTime := clock.Now()
 
-			streamErr := b.config.Streamer(a.ctx, a.Stream, pipeWrite)
+			streamErr := b.config.Streamer(a.ctx, b, a.Stream, pipeWrite)
 			if errors.Is(streamErr, context.Canceled) {
 				return
 			}
@@ -142,7 +142,7 @@ func (a *Agent) Run() {
 			streamDuration := retryEndTime.Sub(retryStartTime)
 
 			if attempt <= MaxRetries && streamDuration < DurationToConsiderStreamWentOnline {
-				a.sugar.Debugw("Retrying getting stream", "streamId", a.Stream.Id, "url", a.Stream.Url)
+				a.sugar.Debugw("Retrying getting stream", "streamId", a.Stream.Id, "url", a.Stream.Url, "streamErr", streamErr)
 				attempt++
 				timer.Reset(10 * time.Second)
 				continue

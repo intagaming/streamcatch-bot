@@ -1,7 +1,9 @@
 package broadcaster
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
@@ -50,20 +52,9 @@ type Config struct {
 	StreamAvailableChecker        func(streamId int64) (bool, error)
 	StreamWaiter                  func(agent *Agent) error
 	Helix                         *helix.Client
-	Streamer                      func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter) error
+	Streamer                      func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
-}
-
-func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
-	b := Broadcaster{
-		sugar:  sugar,
-		agents: make(map[int64]*Agent),
-		helix:  cfg.Helix,
-		config: cfg,
-	}
-
-	return &b
 }
 
 type Stream struct {
@@ -113,6 +104,37 @@ var idCount int64 = 0
 const (
 	ScheduledEndDuration = 30 * time.Minute
 )
+
+func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
+	b := Broadcaster{
+		sugar:  sugar,
+		agents: make(map[int64]*Agent),
+		helix:  cfg.Helix,
+		config: cfg,
+	}
+
+	return &b
+}
+
+func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
+	idCount += 1
+	stream := Stream{
+		Id:             idCount,
+		Url:            url,
+		Platform:       "local",
+		CreatedAt:      time.Now(),
+		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+		Listener:       listener,
+	}
+
+	info, err := b.config.StreamerInfoFetcher(ctx, &stream)
+	if err != nil {
+		return nil, err
+	}
+	stream.ThumbnailUrl = info.ThumbnailUrl
+
+	return &stream, nil
+}
 
 func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
 	checkCmd := exec.CommandContext(ctx, "streamlink", "--can-handle-url", url)
@@ -195,14 +217,56 @@ func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) 
 
 func NewRealStreamWaiter(sugar *zap.SugaredLogger, helixClient *helix.Client, a *Agent) error {
 	var err error
-	if a.Stream.Platform == "twitch" {
+	switch a.Stream.Platform {
+	case "twitch":
 		_, err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.Stream)
-	} else if a.Stream.Platform == "youtube" {
+	case "youtube":
 		_, err = WaitForYoutubeOnline(sugar, a.ctx, a.Stream)
-	} else if a.Stream.Platform == "generic" {
+	case "generic":
 		_, err = WaitForGenericOnline(sugar, a.ctx, a.Stream)
-	} else {
+	case "local":
+		err = WaitForLocalOnline(sugar, a.ctx, a.Stream)
+	default:
 		return errors.New("Unknown platform: " + a.Stream.Platform)
 	}
 	return err
+}
+
+func Streamer(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
+	var streamlinkErrBuf bytes.Buffer
+	var ffmpegErrBuf bytes.Buffer
+
+	var err error
+	switch {
+	case stream.Platform == "twitch":
+		err = StreamFromTwitch(ctx, stream, broadcaster.config.TwitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+	case stream.Platform == "youtube":
+		err = StreamFromYoutube(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+	case stream.Platform == "generic":
+		err = StreamGeneric(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+	case stream.Platform == "local":
+		err = StreamLocal(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+	default:
+		return errors.New("Unknown platform: " + stream.Platform)
+	}
+	var ffmpegAndStreamlinkErrStr []byte
+
+	if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {
+		ffmpegAndStreamlinkErrStr, err = json.Marshal(struct {
+			StreamlinkError string `json:"streamlink_error,omitempty"`
+			FfmpegError     string `json:"ffmpeg_error,omitempty"`
+		}{
+			StreamlinkError: streamlinkErrBuf.String(),
+			FfmpegError:     ffmpegErrBuf.String(),
+		})
+		if err != nil {
+			broadcaster.sugar.Panicw("Failed to marshal error", "streamId", stream.Id, "error", err)
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("errored while streaming from platform. FFMPEG and Streamlink output: %s; error: %w", ffmpegAndStreamlinkErrStr, err)
+	}
+
+	return nil
 }
