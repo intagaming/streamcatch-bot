@@ -148,12 +148,12 @@ func main() {
 
 	if isDev {
 		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
-			stream, err := bc.MakeLocalStream(context.Background(), r.URL.Query().Get("url"), &localStreamListener{})
+			s, err := bc.MakeLocalStream(context.Background(), r.URL.Query().Get("url"), &localStreamListener{})
 			if err != nil {
 				panic(err)
 			}
-			bc.HandleStream(stream)
-			_, _ = w.Write([]byte(fmt.Sprintf("%d", stream.Id)))
+			bc.HandleStream(s)
+			_, _ = w.Write([]byte(fmt.Sprintf("%d", s.Id)))
 		})
 		http.HandleFunc("/local/online", func(w http.ResponseWriter, r *http.Request) {
 			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)

@@ -74,7 +74,7 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 
 func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
 	idCount += 1
-	stream := stream.Stream{
+	s := stream.Stream{
 		Id:             idCount,
 		Url:            url,
 		Platform:       platform.Local,
@@ -83,13 +83,13 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 		Listener:       listener,
 	}
 
-	info, err := b.config.StreamerInfoFetcher(ctx, &stream)
+	info, err := b.config.StreamerInfoFetcher(ctx, &s)
 	if err != nil {
 		return nil, err
 	}
-	stream.ThumbnailUrl = info.ThumbnailUrl
+	s.ThumbnailUrl = info.ThumbnailUrl
 
-	return &stream, nil
+	return &s, nil
 }
 
 func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {

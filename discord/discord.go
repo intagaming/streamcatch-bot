@@ -214,7 +214,7 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
 	ctx := context.Background()
 	sl := bot.NewStreamListener(i)
-	stream, err := bot.broadcaster.MakeStream(ctx, url, sl)
+	s, err := bot.broadcaster.MakeStream(ctx, url, sl)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
 		err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
@@ -229,11 +229,11 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
 		}
 		return
 	}
-	sl.Register(stream.Id)
+	sl.Register(s.Id)
 
-	bot.broadcaster.HandleStream(stream)
+	bot.broadcaster.HandleStream(s)
 
-	msg := bot.MakeRequestReceivedMessage(stream)
+	msg := bot.MakeRequestReceivedMessage(s)
 	err = bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
