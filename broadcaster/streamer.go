@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"streamcatch-bot/broadcaster/stream"
 )
 
-func Streamer(ctx context.Context, platform StreamPlatform, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
+func Streamer(ctx context.Context, platform stream.Platform, broadcaster *Broadcaster, stream *stream.Stream, pipeWrite *io.PipeWriter) error {
 	var streamlinkErrBuf bytes.Buffer
 	var ffmpegErrBuf bytes.Buffer
 

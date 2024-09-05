@@ -1,59 +1,59 @@
-package broadcaster
+package stream
 
 import (
 	"bytes"
 	"context"
 	"go.uber.org/zap"
 	"io"
-	"streamcatch-bot/broadcaster/platform"
+	"streamcatch-bot/broadcaster/platform/name"
 	"time"
 )
 
 type Stream struct {
 	Id             int64
 	Url            string
-	Platform       platform.Name
+	Platform       name.Name
 	CreatedAt      time.Time
 	ScheduledEndAt time.Time
 	TerminatedAt   time.Time
-	Status         StreamStatus
+	Status         Status
 	EndedReason    *EndedReason
 	EndedError     error
-	Listener       StreamStatusListener
+	Listener       StatusListener
 	ThumbnailUrl   string
 }
 
-type StreamStatus int
+type Status int
 
 const (
-	Waiting StreamStatus = iota
-	GoneLive
-	Ended
+	StatusWaiting Status = iota
+	StatusGoneLive
+	StatusEnded
 )
 
 type EndedReason int
 
 const (
-	ForceStopped EndedReason = iota
-	Timeout
-	StreamEnded
-	Fulfilled
-	Errored
+	ReasonForceStopped EndedReason = iota
+	ReasonTimeout
+	ReasonStreamEnded
+	ReasonFulfilled
+	ReasonErrored
 )
 
-type StreamStatusListener interface {
+type StatusListener interface {
 	Status(stream *Stream)
 	StreamStarted(stream *Stream)
 	Close(stream *Stream)
 }
 
-type StreamInfo struct {
+type Info struct {
 	ThumbnailUrl string
 }
 
-type broadcasterCtxKey struct{}
+type BroadcasterCtxKey struct{}
 
-type StreamPlatform interface {
+type Platform interface {
 	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error
 	Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }

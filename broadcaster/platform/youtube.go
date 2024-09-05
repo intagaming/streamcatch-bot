@@ -8,12 +8,13 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os/exec"
-	"streamcatch-bot/broadcaster"
+	"streamcatch-bot/broadcaster/platform/name"
+	"streamcatch-bot/broadcaster/stream"
 	"strings"
 	"time"
 )
 
-var YouTube Name = "youtube"
+var YouTube name.Name = "youtube"
 
 //type YoutubeStreamlinkInfo struct {
 //	Metadata struct {
@@ -23,7 +24,7 @@ var YouTube Name = "youtube"
 
 type YoutubeStreamPlatform struct{}
 
-func (y *YoutubeStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
+func (y *YoutubeStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 	//var youtubeStreamlinkInfo YoutubeStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
@@ -54,7 +55,7 @@ func (y *YoutubeStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 	}
 }
 
-func (y *YoutubeStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (y *YoutubeStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	streamlinkCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "720p60,720p,480p,360p",
 		"--loglevel", "warning", "--stdout")
 	streamlinkCmd.Stderr = streamlinkErrBuf

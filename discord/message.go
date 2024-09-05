@@ -3,7 +3,7 @@ package discord
 import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	"streamcatch-bot/broadcaster"
+	"streamcatch-bot/broadcaster/stream"
 	"time"
 )
 
@@ -13,18 +13,18 @@ type StreamMessageContent struct {
 	Embeds     []*discordgo.MessageEmbed
 }
 
-func (bot *Bot) MakeStreamEndedMessage(stream *broadcaster.Stream) *StreamMessageContent {
+func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	var desc string
-	switch *stream.EndedReason {
-	case broadcaster.StreamEnded:
+	switch *s.EndedReason {
+	case stream.ReasonStreamEnded:
 		desc = "The stream had ended."
-	case broadcaster.Timeout:
+	case stream.ReasonTimeout:
 		desc = "The stream did not come online in time."
-	case broadcaster.Fulfilled:
+	case stream.ReasonFulfilled:
 		desc = "Stream was catch successfully. Catch you on the next one!"
-	case broadcaster.ForceStopped:
+	case stream.ReasonForceStopped:
 		desc = "The stream catch has been stopped by the user."
-	case broadcaster.Errored:
+	case stream.ReasonErrored:
 		desc = "An error has occurred."
 	default:
 		desc = "The stream catch was stopped for unknown reason."
@@ -36,7 +36,7 @@ func (bot *Bot) MakeStreamEndedMessage(stream *broadcaster.Stream) *StreamMessag
 				Title:       "StreamCatch",
 				Description: desc,
 				Thumbnail: &discordgo.MessageEmbedThumbnail{
-					URL: stream.ThumbnailUrl,
+					URL: s.ThumbnailUrl,
 				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
@@ -45,7 +45,7 @@ func (bot *Bot) MakeStreamEndedMessage(stream *broadcaster.Stream) *StreamMessag
 					},
 					{
 						Name:   "Stream URL",
-						Value:  stream.Url,
+						Value:  s.Url,
 						Inline: true,
 					},
 				},
@@ -57,7 +57,7 @@ func (bot *Bot) MakeStreamEndedMessage(stream *broadcaster.Stream) *StreamMessag
 					discordgo.Button{
 						Label:    "Re-catch",
 						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("recatch_%s", stream.Url),
+						CustomID: fmt.Sprintf("recatch_%s", s.Url),
 					},
 				},
 			},
@@ -65,7 +65,7 @@ func (bot *Bot) MakeStreamEndedMessage(stream *broadcaster.Stream) *StreamMessag
 	}
 }
 
-func (bot *Bot) MakeStreamStartedMessage(stream *broadcaster.Stream) *StreamMessageContent {
+func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageContent {
 	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, stream.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
@@ -118,7 +118,7 @@ func (bot *Bot) MakeStreamStartedMessage(stream *broadcaster.Stream) *StreamMess
 	}
 }
 
-func (bot *Bot) MakeStreamGoneLiveMessage(stream *broadcaster.Stream) *StreamMessageContent {
+func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageContent {
 	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, stream.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
@@ -161,7 +161,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(stream *broadcaster.Stream) *StreamMes
 	}
 }
 
-func (bot *Bot) MakeRequestReceivedMessage(stream *broadcaster.Stream) *StreamMessageContent {
+func (bot *Bot) MakeRequestReceivedMessage(stream *stream.Stream) *StreamMessageContent {
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{

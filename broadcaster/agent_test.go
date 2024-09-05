@@ -11,26 +11,28 @@ import (
 	"go.uber.org/zap/zaptest"
 	"io"
 	"streamcatch-bot/broadcaster/platform"
+	"streamcatch-bot/broadcaster/platform/name"
+	"streamcatch-bot/broadcaster/stream"
 	"sync"
 	"testing"
 	"time"
 )
 
 type testListener struct {
-	status        StreamStatus
-	closeReason   *EndedReason
+	status        stream.Status
+	closeReason   *stream.EndedReason
 	closeError    error
 	streamStarted bool
 }
 
-func (tl *testListener) Status(stream *Stream) {
+func (tl *testListener) Status(stream *stream.Stream) {
 	tl.status = stream.Status
 }
-func (tl *testListener) Close(stream *Stream) {
+func (tl *testListener) Close(stream *stream.Stream) {
 	tl.closeReason = stream.EndedReason
 	tl.closeError = stream.EndedError
 }
-func (tl *testListener) StreamStarted(*Stream) {
+func (tl *testListener) StreamStarted(*stream.Stream) {
 	tl.streamStarted = true
 }
 
@@ -90,15 +92,15 @@ func (t *testDummyStreamFfmpegCmder) Wait() error {
 }
 
 type TestTwitchPlatform struct {
-	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error
-	stream        func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
+	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error
+	stream        func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }
 
-func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 	return t.waitForOnline(sugar, ctx, stream)
 }
 
-func (t *TestTwitchPlatform) Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (t *TestTwitchPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	return t.stream(ctx, stream, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
 }
 
@@ -157,13 +159,13 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamPlatforms: map[platform.Name]StreamPlatform{
+			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 						<-streamGoneOnlineChan
 						return nil
 					},
-					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						if streamerRetryUntilSuccess > 0 {
 							streamerRetryUntilSuccess -= 1
 							return errors.New("stream not available")
@@ -185,7 +187,7 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		s := stream.Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
@@ -193,7 +195,7 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
-		broadcaster.HandleStream(&stream)
+		broadcaster.HandleStream(&s)
 
 		// expect StreamCatch stream available
 		assert.False(t, listener.streamStarted)
@@ -238,12 +240,12 @@ func TestAgent(t *testing.T) {
 		assert.Equal(t, dummyOutData, ffmpegCmderIn)
 
 		// expect StreamCatch gone online ok
-		assert.NotEqual(t, listener.status, GoneLive)
+		assert.NotEqual(t, listener.status, stream.StatusGoneLive)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == GoneLive
+			return listener.status == stream.StatusGoneLive
 		}, 5*time.Second)
 
 		// expect ffmpegCmder to receive stream data from Streamer
@@ -264,14 +266,14 @@ func TestAgent(t *testing.T) {
 
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
-		assert.NotEqual(t, listener.status, Ended)
+		assert.NotEqual(t, listener.status, stream.StatusEnded)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == Ended
-		}, stream.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
+			return listener.status == stream.StatusEnded
+		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
 		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, Fulfilled, *listener.closeReason)
+		assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
 	})
 
 	t.Run("StreamNeverCameOnline", func(t *testing.T) {
@@ -293,12 +295,12 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamPlatforms: map[platform.Name]StreamPlatform{
+			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 						select {}
 					},
-					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
 					},
 				},
@@ -307,7 +309,7 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		s := stream.Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
@@ -315,18 +317,18 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
-		broadcaster.HandleStream(&stream)
+		broadcaster.HandleStream(&s)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
 		}, time.Second)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == Ended
-		}, stream.ScheduledEndAt.Sub(mClock.Now())+5*time.Second)
+			return listener.status == stream.StatusEnded
+		}, s.ScheduledEndAt.Sub(mClock.Now())+5*time.Second)
 
 		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, Timeout, *listener.closeReason)
+		assert.Equal(t, stream.ReasonTimeout, *listener.closeReason)
 	})
 
 	t.Run("StreamOnlineThenOfflineImmediatelyThenNeverCameBackOn", func(t *testing.T) {
@@ -351,14 +353,14 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamPlatforms: map[platform.Name]StreamPlatform{
+			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 						<-streamGoneOnlineChan
 						return nil
 
 					},
-					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
 						if streamerCalledTime <= 1 {
 							<-streamerEndChan
@@ -371,7 +373,7 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		s := stream.Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
@@ -379,18 +381,18 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
-		broadcaster.HandleStream(&stream)
+		broadcaster.HandleStream(&s)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
 		}, time.Second)
 
-		assert.Equal(t, Waiting, listener.status)
+		assert.Equal(t, stream.StatusWaiting, listener.status)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == GoneLive
+			return listener.status == stream.StatusGoneLive
 		}, time.Second)
 
 		streamerEndChan <- struct{}{}
@@ -400,11 +402,11 @@ func TestAgent(t *testing.T) {
 		}, 3*time.Minute)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == Ended
+			return listener.status == stream.StatusEnded
 		}, time.Second)
 
 		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, Errored, *listener.closeReason)
+		assert.Equal(t, stream.ReasonErrored, *listener.closeReason)
 		assert.Equal(t, FailedToStreamError, listener.closeError)
 	})
 
@@ -430,13 +432,13 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamPlatforms: map[platform.Name]StreamPlatform{
+			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 						<-streamGoneOnlineChan
 						return nil
 					},
-					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
 						<-streamerEndChan
 						return nil
@@ -447,7 +449,7 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		s := stream.Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
@@ -455,18 +457,18 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
-		broadcaster.HandleStream(&stream)
+		broadcaster.HandleStream(&s)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
 		}, time.Second)
 
-		assert.Equal(t, Waiting, listener.status)
+		assert.Equal(t, stream.StatusWaiting, listener.status)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == GoneLive
+			return listener.status == stream.StatusGoneLive
 		}, time.Second)
 
 		streamerEndChan <- struct{}{}
@@ -482,11 +484,11 @@ func TestAgent(t *testing.T) {
 		}, time.Minute)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == Ended
-		}, stream.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
+			return listener.status == stream.StatusEnded
+		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
 		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, Fulfilled, *listener.closeReason)
+		assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
 	})
 
 	t.Run("StreamCameOnlineBeforeStreamCatchReady", func(t *testing.T) {
@@ -515,13 +517,13 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamPlatforms: map[platform.Name]StreamPlatform{
+			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 						<-streamGoneOnlineChan
 						return nil
 					},
-					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
 					},
 				},
@@ -530,7 +532,7 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		s := stream.Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
@@ -538,13 +540,13 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
-		broadcaster.HandleStream(&stream)
+		broadcaster.HandleStream(&s)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		// TODO: fragile
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == GoneLive
+			return listener.status == stream.StatusGoneLive
 		}, 5*time.Second)
 
 		assert.False(t, listener.streamStarted)
@@ -585,13 +587,13 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamPlatforms: map[platform.Name]StreamPlatform{
+			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 						<-streamGoneOnlineChan
 						return nil
 					},
-					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
 					},
 				},
@@ -600,7 +602,7 @@ func TestAgent(t *testing.T) {
 		})
 		listener := testListener{}
 
-		stream := Stream{
+		s := stream.Stream{
 			Id:             1,
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
@@ -608,9 +610,9 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
-		agent := broadcaster.HandleStream(&stream)
+		agent := broadcaster.HandleStream(&s)
 
-		agent.Close(ForceStopped, nil)
+		agent.Close(stream.ReasonForceStopped, nil)
 
 		// We're happy if there's no runtime error so far.
 	})

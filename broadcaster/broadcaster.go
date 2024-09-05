@@ -9,6 +9,8 @@ import (
 	"go.uber.org/zap"
 	"os/exec"
 	"streamcatch-bot/broadcaster/platform"
+	"streamcatch-bot/broadcaster/platform/name"
+	"streamcatch-bot/broadcaster/stream"
 	"strings"
 	"time"
 )
@@ -33,9 +35,9 @@ type Config struct {
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) FfmpegCmder
 	StreamAvailableChecker        func(streamId int64) (bool, error)
 	Helix                         *helix.Client
-	StreamPlatforms               map[platform.Name]StreamPlatform
+	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
-	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
+	StreamerInfoFetcher           func(ctx context.Context, stream *stream.Stream) (*stream.Info, error)
 }
 
 type Broadcaster struct {
@@ -70,9 +72,9 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	return &b
 }
 
-func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
+func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
 	idCount += 1
-	stream := Stream{
+	stream := stream.Stream{
 		Id:             idCount,
 		Url:            url,
 		Platform:       platform.Local,
@@ -90,7 +92,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	return &stream, nil
 }
 
-func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener StreamStatusListener) (*Stream, error) {
+func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
 	checkCmd := exec.CommandContext(ctx, "streamlink", "--can-handle-url", url)
 	err := checkCmd.Run()
 	if err != nil {
@@ -104,7 +106,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener Strea
 		return nil, err
 	}
 
-	var platformName platform.Name
+	var platformName name.Name
 	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
 		platformName = platform.YouTube
 	} else if strings.Contains(url, "twitch.tv") {
@@ -114,7 +116,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener Strea
 	}
 
 	idCount += 1
-	stream := Stream{
+	s := stream.Stream{
 		Id:             idCount,
 		Url:            url,
 		Platform:       platformName,
@@ -123,28 +125,28 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener Strea
 		Listener:       listener,
 	}
 
-	info, err := b.config.StreamerInfoFetcher(ctx, &stream)
+	info, err := b.config.StreamerInfoFetcher(ctx, &s)
 	if err != nil {
 		return nil, err
 	}
-	stream.ThumbnailUrl = info.ThumbnailUrl
+	s.ThumbnailUrl = info.ThumbnailUrl
 
-	return &stream, nil
+	return &s, nil
 }
 
-func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
+func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
-	ctx = context.WithValue(ctx, broadcasterCtxKey{}, b)
+	ctx = context.WithValue(ctx, stream.BroadcasterCtxKey{}, b)
 
 	agent := Agent{
 		sugar:       b.sugar,
 		ctx:         ctx,
 		ctxCancel:   cancel,
-		Stream:      stream,
-		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
+		Stream:      s,
+		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, s.Id),
 		dummyStreamFfmpegCmderCreator: func(ctx context.Context) FfmpegCmder {
-			return b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url)
+			return b.config.DummyStreamFfmpegCmderCreator(ctx, s.Url)
 		},
 	}
 

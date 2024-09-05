@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"streamcatch-bot/broadcaster"
+	"streamcatch-bot/broadcaster/stream"
 	"strings"
 	"time"
 )
@@ -80,7 +81,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 					return
 				}
 
-				a.Close(broadcaster.ForceStopped, nil)
+				a.Close(stream.ReasonForceStopped, nil)
 
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,

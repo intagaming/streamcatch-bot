@@ -8,8 +8,8 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os/exec"
-	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/platform/name"
+	"streamcatch-bot/broadcaster/stream"
 	"strings"
 	"time"
 )
@@ -23,7 +23,7 @@ type GenericStreamPlatform struct{}
 //	} `json:"metadata"`
 //}
 
-func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
+func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 	//var streamlinkInfo GenericStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
@@ -55,7 +55,7 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 
 }
 
-func (g *GenericStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (g *GenericStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	streamlinkCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "720p60,720p,480p,360p",
 		"--loglevel", "warning", "--stdout")
 	streamlinkCmd.Stderr = streamlinkErrBuf

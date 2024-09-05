@@ -9,7 +9,8 @@ import (
 	"io"
 	"net/url"
 	"os/exec"
-	"streamcatch-bot/broadcaster"
+	"streamcatch-bot/broadcaster/platform/name"
+	"streamcatch-bot/broadcaster/stream"
 	"strings"
 	"time"
 
@@ -17,10 +18,10 @@ import (
 )
 
 var (
-	contextCancelledErr      = errors.New("context canceled")
-	malformedTwitchUrl       = errors.New("couldn't find Twitch streamer name")
-	channelNotFoundErr       = errors.New("channel not found")
-	Twitch              Name = "twitch"
+	contextCancelledErr           = errors.New("context canceled")
+	malformedTwitchUrl            = errors.New("couldn't find Twitch streamer name")
+	channelNotFoundErr            = errors.New("channel not found")
+	Twitch              name.Name = "twitch"
 )
 
 func GetTwitchStreamerNameFromUrl(twitchUrl string) (string, error) {
@@ -58,7 +59,7 @@ type TwitchStreamPlatform struct {
 	TwitchAuthToken string
 }
 
-func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
+func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
 	streamerName, err := GetTwitchStreamerNameFromUrl(stream.Url)
 	if err != nil {
 		return err
@@ -94,7 +95,7 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 	}
 }
 
-func (t *TwitchStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (t *TwitchStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	args := []string{stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
 	if t.TwitchAuthToken != "" {
 		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", t.TwitchAuthToken))

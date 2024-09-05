@@ -2,7 +2,7 @@ package discord
 
 import (
 	"github.com/bwmarrin/discordgo"
-	"streamcatch-bot/broadcaster"
+	"streamcatch-bot/broadcaster/stream"
 	"sync"
 )
 
@@ -21,20 +21,20 @@ func (sl *StreamListener) Register(streamId int64) {
 	streamToStreamListener[streamId] = sl
 }
 
-func (sl *StreamListener) UpdateStreamCatchMessage(stream *broadcaster.Stream) {
+func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
 	sl.messageMutex.Lock()
 	defer sl.messageMutex.Unlock()
 
 	var msg *StreamMessageContent
-	switch stream.Status {
-	case broadcaster.Waiting:
-		msg = sl.bot.MakeStreamStartedMessage(stream)
-	case broadcaster.GoneLive:
-		msg = sl.bot.MakeStreamGoneLiveMessage(stream)
-	case broadcaster.Ended:
-		msg = sl.bot.MakeStreamEndedMessage(stream)
+	switch s.Status {
+	case stream.StatusWaiting:
+		msg = sl.bot.MakeStreamStartedMessage(s)
+	case stream.StatusGoneLive:
+		msg = sl.bot.MakeStreamGoneLiveMessage(s)
+	case stream.StatusEnded:
+		msg = sl.bot.MakeStreamEndedMessage(s)
 	default:
-		sl.bot.sugar.Fatalf("Unknown stream status: %d", stream.Status)
+		sl.bot.sugar.Fatalf("Unknown stream status: %d", s.Status)
 		return
 	}
 
@@ -62,15 +62,15 @@ func (sl *StreamListener) UpdateStreamCatchMessage(stream *broadcaster.Stream) {
 	}
 }
 
-func (sl *StreamListener) Status(stream *broadcaster.Stream) {
+func (sl *StreamListener) Status(stream *stream.Stream) {
 	sl.UpdateStreamCatchMessage(stream)
 }
 
-func (sl *StreamListener) StreamStarted(stream *broadcaster.Stream) {
+func (sl *StreamListener) StreamStarted(stream *stream.Stream) {
 	sl.UpdateStreamCatchMessage(stream)
 }
 
-func (sl *StreamListener) Close(stream *broadcaster.Stream) {
+func (sl *StreamListener) Close(stream *stream.Stream) {
 	sl.UpdateStreamCatchMessage(stream)
 }
 
