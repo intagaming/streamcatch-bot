@@ -1,55 +1,58 @@
-package broadcaster
+package platforms
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go.uber.org/zap"
 	"io"
 	"os/exec"
+	"streamcatch-bot/broadcaster"
 	"strings"
 	"time"
 )
 
-type YoutubeStreamlinkInfo struct {
-	Metadata struct {
-		Id string `json:"id"`
-	} `json:"metadata"`
-}
+type GenericStreamPlatform struct{}
 
-func WaitForYoutubeOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) (*YoutubeStreamlinkInfo, error) {
-	var youtubeStreamlinkInfo YoutubeStreamlinkInfo
+//type GenericStreamlinkInfo struct {
+//	Metadata struct {
+//	} `json:"metadata"`
+//}
+
+func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
+	//var streamlinkInfo GenericStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, contextCancelledErr
+			return contextCancelledErr
 		case <-ticker.C:
 			statusCheckCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "-j")
 			output, _ := statusCheckCmd.CombinedOutput()
-			if strings.Contains(string(output), `"plugin": "youtube"`) {
-				if err := json.Unmarshal(output, &youtubeStreamlinkInfo); err != nil {
-					sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
-				}
+			if strings.Contains(string(output), `"plugin": "`) {
+				//if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
+				//	sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
+				//}
 				// Now online
-				sugar.Debugw("Detected youtube stream live", "id", stream.Id, "url", stream.Url)
-				return &youtubeStreamlinkInfo, nil
+				sugar.Debugw("Detected stream live", "url", stream.Url)
+				//return &streamlinkInfo, nil
+				return nil
 			} else if strings.Contains(string(output), `No playable streams`) {
-				sugar.Debugw("Retrying getting stream", "id", stream.Id, "url", stream.Url)
+				sugar.Debugw("Retrying getting stream", "url", stream.Url)
 				continue
 			} else {
 				sugar.Errorw("Doesn't recognize the output from the streamlink stream checking command", "output", string(output))
-				return nil, errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
+				return errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
 			}
 		}
 	}
+
 }
 
-func StreamFromYoutube(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (g *GenericStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	streamlinkCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "720p60,720p,480p,360p",
 		"--loglevel", "warning", "--stdout")
 	streamlinkCmd.Stderr = streamlinkErrBuf

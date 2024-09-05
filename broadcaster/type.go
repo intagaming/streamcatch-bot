@@ -1,6 +1,12 @@
 package broadcaster
 
-import "time"
+import (
+	"bytes"
+	"context"
+	"go.uber.org/zap"
+	"io"
+	"time"
+)
 
 type Stream struct {
 	Id             int64
@@ -45,3 +51,8 @@ type StreamInfo struct {
 }
 
 type broadcasterCtxKey struct{}
+
+type StreamPlatform interface {
+	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error
+	Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
+}

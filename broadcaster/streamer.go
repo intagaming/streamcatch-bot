@@ -4,28 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 )
 
-func Streamer(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
+func Streamer(ctx context.Context, platform StreamPlatform, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
 	var streamlinkErrBuf bytes.Buffer
 	var ffmpegErrBuf bytes.Buffer
 
-	var err error
-	switch {
-	case stream.Platform == "twitch":
-		err = StreamFromTwitch(ctx, stream, broadcaster.config.TwitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	case stream.Platform == "youtube":
-		err = StreamFromYoutube(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	case stream.Platform == "generic":
-		err = StreamGeneric(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	case stream.Platform == "local":
-		err = StreamLocal(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	default:
-		return errors.New("Unknown platform: " + stream.Platform)
-	}
+	err := platform.Stream(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
 	var ffmpegAndStreamlinkErrStr []byte
 
 	if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {

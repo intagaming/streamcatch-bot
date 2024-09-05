@@ -1,4 +1,4 @@
-package broadcaster
+package platforms
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"os/exec"
+	"streamcatch-bot/broadcaster"
 	"strings"
 	"time"
 
@@ -51,10 +52,15 @@ func FetchTwitchStreamerInfo(helixClient *helix.Client, url string) (*helix.User
 	return &streams.Data.Users[0], nil
 }
 
-func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixClient *helix.Client, stream *Stream) (*helix.Stream, error) {
+type TwitchStreamPlatform struct {
+	HelixClient     *helix.Client
+	TwitchAuthToken string
+}
+
+func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
 	streamerName, err := GetTwitchStreamerNameFromUrl(stream.Url)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	ticker := time.NewTicker(3 * time.Second)
@@ -62,9 +68,12 @@ func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixCli
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, contextCancelledErr
+			return contextCancelledErr
 		case <-ticker.C:
-			streams, err := helixClient.GetStreams(&helix.StreamsParams{
+			//streams, err := t.helixClient.GetStreams(&helix.StreamsParams{
+			//	UserLogins: []string{streamerName},
+			//})
+			streams, err := t.HelixClient.GetStreams(&helix.StreamsParams{
 				UserLogins: []string{streamerName},
 			})
 			if err != nil {
@@ -78,15 +87,16 @@ func WaitForTwitchOnline(sugar *zap.SugaredLogger, ctx context.Context, helixCli
 			}
 			// Now online
 			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "id", streams.Data.Streams[0].ID)
-			return &streams.Data.Streams[0], nil
+			//return &streams.Data.Streams[0], nil
+			return nil
 		}
 	}
 }
 
-func StreamFromTwitch(ctx context.Context, stream *Stream, twitchAuthToken string, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (t *TwitchStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	args := []string{stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
-	if twitchAuthToken != "" {
-		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", twitchAuthToken))
+	if t.TwitchAuthToken != "" {
+		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", t.TwitchAuthToken))
 	}
 	streamlinkCmd := exec.CommandContext(ctx, "streamlink", args...)
 	streamlinkCmd.Stderr = streamlinkErrBuf

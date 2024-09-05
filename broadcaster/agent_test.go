@@ -1,11 +1,13 @@
 package broadcaster
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"io"
 	"sync"
@@ -27,7 +29,7 @@ func (tl *testListener) Close(stream *Stream) {
 	tl.closeReason = stream.EndedReason
 	tl.closeError = stream.EndedError
 }
-func (tl *testListener) StreamStarted(stream *Stream) {
+func (tl *testListener) StreamStarted(*Stream) {
 	tl.streamStarted = true
 }
 
@@ -40,9 +42,9 @@ func (t *testFfmpegCmder) SetStdin(pipe io.Reader) {
 	t.stdin = pipe
 }
 
-func (t *testFfmpegCmder) SetStdout(pipe io.Writer) {}
+func (t *testFfmpegCmder) SetStdout(io.Writer) {}
 
-func (t *testFfmpegCmder) SetStderr(pipe io.Writer) {
+func (t *testFfmpegCmder) SetStderr(io.Writer) {
 }
 
 func (t *testFfmpegCmder) Start() error {
@@ -61,14 +63,14 @@ type testDummyStreamFfmpegCmder struct {
 	waitToStartChan chan struct{}
 }
 
-func (t *testDummyStreamFfmpegCmder) SetStdin(pipe io.Reader) {
+func (t *testDummyStreamFfmpegCmder) SetStdin(io.Reader) {
 }
 
 func (t *testDummyStreamFfmpegCmder) SetStdout(pipe io.Writer) {
 	t.stdout = pipe
 }
 
-func (t *testDummyStreamFfmpegCmder) SetStderr(pipe io.Writer) {
+func (t *testDummyStreamFfmpegCmder) SetStderr(io.Writer) {
 }
 
 func (t *testDummyStreamFfmpegCmder) Start() error {
@@ -84,6 +86,19 @@ func (t *testDummyStreamFfmpegCmder) Start() error {
 func (t *testDummyStreamFfmpegCmder) Wait() error {
 	<-t.ctx.Done()
 	return t.ctx.Err()
+}
+
+type TestTwitchPlatform struct {
+	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error
+	stream        func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
+}
+
+func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+	return t.waitForOnline(sugar, ctx, stream)
+}
+
+func (t *TestTwitchPlatform) Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+	return t.stream(ctx, stream, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
 }
 
 func TestAgent(t *testing.T) {
@@ -141,25 +156,29 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamWaiter: func(agent *Agent) error {
-				<-streamGoneOnlineChan
-				return nil
-			},
-			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-				if streamerRetryUntilSuccess > 0 {
-					streamerRetryUntilSuccess -= 1
-					return errors.New("stream not available")
-				}
-				_, err := pipeWrite.Write(streamerData)
-				if err != nil {
-					return fmt.Errorf("unexpected streamer write error: %w", err)
-				}
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-streamEndChan:
-				}
-				return nil
+			StreamPlatforms: map[string]StreamPlatform{
+				"twitch": &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+						<-streamGoneOnlineChan
+						return nil
+					},
+					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						if streamerRetryUntilSuccess > 0 {
+							streamerRetryUntilSuccess -= 1
+							return errors.New("stream not available")
+						}
+						_, err := pipeWrite.Write(streamerData)
+						if err != nil {
+							return fmt.Errorf("unexpected streamer write error: %w", err)
+						}
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-streamEndChan:
+						}
+						return nil
+					},
+				},
 			},
 			Clock: mClock,
 		})
@@ -273,11 +292,15 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamWaiter: func(agent *Agent) error {
-				select {}
-			},
-			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-				return errors.New("should not be called")
+			StreamPlatforms: map[string]StreamPlatform{
+				"twitch": &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+						select {}
+					},
+					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						return errors.New("should not be called")
+					},
+				},
 			},
 			Clock: mClock,
 		})
@@ -327,16 +350,21 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamWaiter: func(agent *Agent) error {
-				<-streamGoneOnlineChan
-				return nil
-			},
-			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-				streamerCalledTime += 1
-				if streamerCalledTime <= 1 {
-					<-streamerEndChan
-				}
-				return nil
+			StreamPlatforms: map[string]StreamPlatform{
+				"twitch": &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+						<-streamGoneOnlineChan
+						return nil
+
+					},
+					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						streamerCalledTime += 1
+						if streamerCalledTime <= 1 {
+							<-streamerEndChan
+						}
+						return nil
+					},
+				},
 			},
 			Clock: mClock,
 		})
@@ -401,14 +429,18 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamWaiter: func(agent *Agent) error {
-				<-streamGoneOnlineChan
-				return nil
-			},
-			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-				streamerCalledTime += 1
-				<-streamerEndChan
-				return nil
+			StreamPlatforms: map[string]StreamPlatform{
+				"twitch": &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+						<-streamGoneOnlineChan
+						return nil
+					},
+					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						streamerCalledTime += 1
+						<-streamerEndChan
+						return nil
+					},
+				},
 			},
 			Clock: mClock,
 		})
@@ -482,12 +514,16 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamWaiter: func(agent *Agent) error {
-				<-streamGoneOnlineChan
-				return nil
-			},
-			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-				return errors.New("should not go here")
+			StreamPlatforms: map[string]StreamPlatform{
+				"twitch": &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+						<-streamGoneOnlineChan
+						return nil
+					},
+					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						return errors.New("should not go here")
+					},
+				},
 			},
 			Clock: mClock,
 		})
@@ -548,12 +584,16 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamWaiter: func(agent *Agent) error {
-				<-streamGoneOnlineChan
-				return nil
-			},
-			Streamer: func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-				return errors.New("should not go here")
+			StreamPlatforms: map[string]StreamPlatform{
+				"twitch": &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+						<-streamGoneOnlineChan
+						return nil
+					},
+					stream: func(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						return errors.New("should not go here")
+					},
+				},
 			},
 			Clock: mClock,
 		})

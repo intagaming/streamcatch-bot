@@ -7,7 +7,6 @@ import (
 	"github.com/coder/quartz"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -32,9 +31,8 @@ type Config struct {
 	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) FfmpegCmder
 	StreamAvailableChecker        func(streamId int64) (bool, error)
-	StreamWaiter                  func(agent *Agent) error
 	Helix                         *helix.Client
-	Streamer                      func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error
+	StreamPlatforms               map[string]StreamPlatform
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
 }

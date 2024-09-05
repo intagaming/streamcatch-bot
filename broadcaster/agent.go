@@ -94,7 +94,12 @@ func (a *Agent) Run() {
 	a.sugar.Debugw("Agent initialized", "streamId", a.Stream.Id)
 
 	// Wait for stream to come online based on the platform
-	waitError := b.config.StreamWaiter(a)
+	platform, ok := b.config.StreamPlatforms[a.Stream.Platform]
+	if !ok {
+		a.Close(Errored, fmt.Errorf("unknown platform: %s", a.Stream.Platform))
+		return
+	}
+	waitError := platform.WaitForOnline(a.sugar, a.ctx, a.Stream)
 	if a.ctx.Err() != nil {
 		return
 	}
@@ -132,7 +137,7 @@ func (a *Agent) Run() {
 		case <-timer.C:
 			retryStartTime := clock.Now()
 
-			streamErr := b.config.Streamer(a.ctx, b, a.Stream, pipeWrite)
+			streamErr := Streamer(a.ctx, platform, b, a.Stream, pipeWrite)
 			if errors.Is(streamErr, context.Canceled) {
 				return
 			}

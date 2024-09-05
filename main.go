@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"strconv"
 	"streamcatch-bot/broadcaster"
+	"streamcatch-bot/broadcaster/platforms"
 	"streamcatch-bot/discord"
 )
 
@@ -117,14 +118,19 @@ func main() {
 			}
 			return true, nil
 		},
-		StreamWaiter: func(agent *broadcaster.Agent) error {
-			return broadcaster.NewRealStreamWaiter(sugar, helixClient, agent)
+		StreamPlatforms: map[string]broadcaster.StreamPlatform{
+			"twitch": &platforms.TwitchStreamPlatform{
+				HelixClient:     helixClient,
+				TwitchAuthToken: twitchAuthToken,
+			},
+			"youtube": &platforms.YoutubeStreamPlatform{},
+			"generic": &platforms.GenericStreamPlatform{},
+			"local":   &platforms.LocalStreamPlatform{},
 		},
-		Streamer: broadcaster.Streamer,
 		StreamerInfoFetcher: func(ctx context.Context, stream *broadcaster.Stream) (*broadcaster.StreamInfo, error) {
 			switch stream.Platform {
 			case "twitch":
-				info, err := broadcaster.FetchTwitchStreamerInfo(helixClient, stream.Url)
+				info, err := platforms.FetchTwitchStreamerInfo(helixClient, stream.Url)
 				if err != nil {
 					return nil, err
 				}
@@ -154,7 +160,7 @@ func main() {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			broadcaster.SetLocalOnline(streamId)
+			platforms.SetLocalOnline(streamId)
 		})
 		http.HandleFunc("/local/stop", func(w http.ResponseWriter, r *http.Request) {
 			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)

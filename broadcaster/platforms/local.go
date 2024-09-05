@@ -1,4 +1,4 @@
-package broadcaster
+package platforms
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os/exec"
+	"streamcatch-bot/broadcaster"
 	"time"
 )
 
@@ -16,7 +17,9 @@ func SetLocalOnline(streamerId int64) {
 	localOnlineMap[streamerId] = true
 }
 
-func WaitForLocalOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
+type LocalStreamPlatform struct{}
+
+func (l *LocalStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -31,7 +34,7 @@ func WaitForLocalOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *S
 	}
 }
 
-func StreamLocal(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (l *LocalStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	// TODO: open ffmpeg to read from file url and print to stdout. Use this dummy thing for now.
 	localStreamerCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner",
 		"-loglevel", "error", "-re", "-f", "lavfi", "-i", "color=size=1280x720:rate=5:color=green",
