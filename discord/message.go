@@ -66,7 +66,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 }
 
 func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageContent {
-	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, stream.Id)
+	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, stream.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
@@ -105,12 +105,12 @@ func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageCo
 					discordgo.Button{
 						Label:    "Refresh",
 						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("refresh_%d", stream.Id),
+						CustomID: fmt.Sprintf("refresh_%s", stream.Id),
 					},
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%d", stream.Id),
+						CustomID: fmt.Sprintf("stop_%s", stream.Id),
 					},
 				},
 			},
@@ -119,7 +119,7 @@ func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageCo
 }
 
 func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageContent {
-	link := fmt.Sprintf("%s/%d", bot.mediaServerHlsUrl, stream.Id)
+	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, stream.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
@@ -153,7 +153,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageC
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%d", stream.Id),
+						CustomID: fmt.Sprintf("stop_%s", stream.Id),
 					},
 				},
 			},

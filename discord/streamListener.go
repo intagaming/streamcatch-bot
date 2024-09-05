@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	streamToStreamListener = make(map[int64]*StreamListener)
+	streamToStreamListener = make(map[stream.Id]*StreamListener)
 )
 
 type StreamListener struct {
@@ -17,7 +17,7 @@ type StreamListener struct {
 	messageMutex sync.Mutex
 }
 
-func (sl *StreamListener) Register(streamId int64) {
+func (sl *StreamListener) Register(streamId stream.Id) {
 	streamToStreamListener[streamId] = sl
 }
 

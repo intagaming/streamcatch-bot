@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"streamcatch-bot/broadcaster/stream"
 	"strings"
 )
 
@@ -32,7 +33,7 @@ func (r *RealFfmpegCmder) Wait() error {
 	return r.cmd.Wait()
 }
 
-func NewRealFfmpegCmder(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+func NewRealFfmpegCmder(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 	streamerFfmpegCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner",
 		"-loglevel", "error", "-re", "-i", "pipe:", "-c:v", "copy",
 		"-c:a", "aac", "-f", "rtsp",

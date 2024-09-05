@@ -140,7 +140,7 @@ func TestAgent(t *testing.T) {
 		streamerRetryUntilSuccess := 2
 
 		broadcaster := New(logger.Sugar(), &Config{
-			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
@@ -150,7 +150,7 @@ func TestAgent(t *testing.T) {
 				}
 				return dummyFfmpegCmder
 			},
-			StreamAvailableChecker: func(streamId int64) (bool, error) {
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
 				streamAvailableCalledTime += 1
 				select {
 				case <-streamAvailableChan:
@@ -188,7 +188,7 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 
 		s := stream.Stream{
-			Id:             1,
+			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
@@ -282,7 +282,7 @@ func TestAgent(t *testing.T) {
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 
 		broadcaster := New(logger.Sugar(), &Config{
-			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
@@ -292,7 +292,7 @@ func TestAgent(t *testing.T) {
 				}
 				return dummyFfmpegCmder
 			},
-			StreamAvailableChecker: func(streamId int64) (bool, error) {
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
 				return true, nil
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
@@ -310,7 +310,7 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 
 		s := stream.Stream{
-			Id:             1,
+			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
@@ -340,7 +340,7 @@ func TestAgent(t *testing.T) {
 		streamerCalledTime := 0
 
 		broadcaster := New(logger.Sugar(), &Config{
-			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
@@ -350,7 +350,7 @@ func TestAgent(t *testing.T) {
 				}
 				return dummyFfmpegCmder
 			},
-			StreamAvailableChecker: func(streamId int64) (bool, error) {
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
 				return true, nil
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
@@ -374,7 +374,7 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 
 		s := stream.Stream{
-			Id:             1,
+			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
@@ -419,7 +419,7 @@ func TestAgent(t *testing.T) {
 		streamerCalledTime := 0
 
 		broadcaster := New(logger.Sugar(), &Config{
-			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
@@ -429,7 +429,7 @@ func TestAgent(t *testing.T) {
 				}
 				return dummyFfmpegCmder
 			},
-			StreamAvailableChecker: func(streamId int64) (bool, error) {
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
 				return true, nil
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
@@ -450,7 +450,7 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 
 		s := stream.Stream{
-			Id:             1,
+			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
@@ -499,7 +499,7 @@ func TestAgent(t *testing.T) {
 		streamGoneOnlineChan := make(chan struct{}, 1)
 
 		broadcaster := New(logger.Sugar(), &Config{
-			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
@@ -509,7 +509,7 @@ func TestAgent(t *testing.T) {
 				}
 				return dummyFfmpegCmder
 			},
-			StreamAvailableChecker: func(streamId int64) (bool, error) {
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
 				select {
 				case <-streamAvailableChan:
 					return true, nil
@@ -533,7 +533,7 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 
 		s := stream.Stream{
-			Id:             1,
+			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
@@ -568,7 +568,7 @@ func TestAgent(t *testing.T) {
 		streamGoneOnlineChan := make(chan struct{}, 1)
 
 		broadcaster := New(logger.Sugar(), &Config{
-			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId int64) FfmpegCmder {
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
@@ -579,7 +579,7 @@ func TestAgent(t *testing.T) {
 				}
 				return dummyFfmpegCmder
 			},
-			StreamAvailableChecker: func(streamId int64) (bool, error) {
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
 				select {
 				case <-streamAvailableChan:
 					return true, nil
@@ -603,7 +603,7 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 
 		s := stream.Stream{
-			Id:             1,
+			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),

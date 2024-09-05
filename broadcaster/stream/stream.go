@@ -9,8 +9,10 @@ import (
 	"time"
 )
 
+type Id string
+
 type Stream struct {
-	Id             int64
+	Id             Id
 	Url            string
 	Platform       name.Name
 	CreatedAt      time.Time

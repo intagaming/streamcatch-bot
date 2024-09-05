@@ -13,11 +13,11 @@ import (
 )
 
 var (
-	localOnlineMap           = make(map[int64]bool)
+	localOnlineMap           = make(map[stream.Id]bool)
 	Local          name.Name = "local"
 )
 
-func SetLocalOnline(streamerId int64) {
+func SetLocalOnline(streamerId stream.Id) {
 	localOnlineMap[streamerId] = true
 }
 

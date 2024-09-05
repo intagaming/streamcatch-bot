@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
@@ -110,8 +109,8 @@ func main() {
 		MediaServerApiUrl:             mediaServerApiUrl,
 		FfmpegCmderCreator:            broadcaster.NewRealFfmpegCmder,
 		DummyStreamFfmpegCmderCreator: broadcaster.NewRealDummyStreamFfmpegCmder,
-		StreamAvailableChecker: func(streamId int64) (bool, error) {
-			resp, err := http.Get(mediaServerApiUrl + "/v3/paths/get/" + strconv.FormatInt(streamId, 10))
+		StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
+			resp, err := http.Get(mediaServerApiUrl + "/v3/paths/get/" + string(streamId))
 			if err != nil {
 				return false, err
 			}
@@ -153,25 +152,14 @@ func main() {
 				panic(err)
 			}
 			bc.HandleStream(s)
-			_, _ = w.Write([]byte(fmt.Sprintf("%d", s.Id)))
+			_, _ = w.Write([]byte(fmt.Sprintf("%s", s.Id)))
 		})
 		http.HandleFunc("/local/online", func(w http.ResponseWriter, r *http.Request) {
-			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
-			if err != nil {
-				sugar.Debugw("Failed to get stream id", "error", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
+			streamId := stream.Id(r.URL.Query().Get("id"))
 			platform.SetLocalOnline(streamId)
 		})
 		http.HandleFunc("/local/stop", func(w http.ResponseWriter, r *http.Request) {
-			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
-			if err != nil {
-				sugar.Debugw("Failed to get stream id", "error", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
+			streamId := stream.Id(r.URL.Query().Get("id"))
 			a, ok := bc.Agents()[streamId]
 			if !ok {
 				sugar.Debugw("Agent not found", "streamId", streamId)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"os/exec"
@@ -31,9 +32,9 @@ type Config struct {
 	MediaServerPublishUser        string
 	MediaServerPublishPassword    string
 	MediaServerApiUrl             string
-	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
+	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) FfmpegCmder
-	StreamAvailableChecker        func(streamId int64) (bool, error)
+	StreamAvailableChecker        func(streamId stream.Id) (bool, error)
 	Helix                         *helix.Client
 	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
@@ -42,12 +43,12 @@ type Config struct {
 
 type Broadcaster struct {
 	sugar  *zap.SugaredLogger
-	agents map[int64]*Agent
+	agents map[stream.Id]*Agent
 	helix  *helix.Client
 	config *Config
 }
 
-func (b *Broadcaster) Agents() map[int64]*Agent {
+func (b *Broadcaster) Agents() map[stream.Id]*Agent {
 	return b.agents
 }
 
@@ -59,12 +60,10 @@ func (b *Broadcaster) MediaServerPublishPassword() string {
 	return b.config.MediaServerPublishPassword
 }
 
-var idCount int64 = 0
-
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	b := Broadcaster{
 		sugar:  sugar,
-		agents: make(map[int64]*Agent),
+		agents: make(map[stream.Id]*Agent),
 		helix:  cfg.Helix,
 		config: cfg,
 	}
@@ -73,9 +72,12 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 }
 
 func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
-	idCount += 1
+	id, err := gonanoid.New()
+	if err != nil {
+		return nil, err
+	}
 	s := stream.Stream{
-		Id:             idCount,
+		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platform.Local,
 		CreatedAt:      time.Now(),
@@ -115,9 +117,12 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 		platformName = platform.Generic
 	}
 
-	idCount += 1
+	id, err := gonanoid.New()
+	if err != nil {
+		return nil, err
+	}
 	s := stream.Stream{
-		Id:             idCount,
+		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platformName,
 		CreatedAt:      time.Now(),
@@ -162,7 +167,7 @@ func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 	return &agent
 }
 
-func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) error {
+func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Time) error {
 	a, ok := b.agents[streamId]
 	if !ok {
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))

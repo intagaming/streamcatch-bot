@@ -5,7 +5,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"os"
-	"strconv"
 	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/stream"
 	"strings"
@@ -48,23 +47,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 		case discordgo.InteractionMessageComponent:
 			customID := i.MessageComponentData().CustomID
 			if strings.HasPrefix(customID, "stop_") {
-				streamIdStr := strings.TrimPrefix(customID, "stop_")
-				streamId, err := strconv.ParseInt(streamIdStr, 10, 64)
-				if err != nil {
-					bot.sugar.Debugw("Failed to parse customID", "err", err)
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "An error occurred.",
-							Flags:   discordgo.MessageFlagsEphemeral,
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
-					}
-					return
-				}
-
+				streamId := stream.Id(strings.TrimPrefix(customID, "stop_"))
 				a, ok := bot.broadcaster.Agents()[streamId]
 				if !ok {
 					bot.sugar.Debugw("Agent not found", "streamId", streamId)
@@ -92,23 +75,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 				return
 			}
 			if strings.HasPrefix(customID, "refresh_") {
-				streamIdStr := strings.TrimPrefix(customID, "refresh_")
-				streamId, err := strconv.ParseInt(streamIdStr, 10, 64)
-				if err != nil {
-					bot.sugar.Debugw("Failed to parse customID", "err", err)
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "An error occurred.",
-							Flags:   discordgo.MessageFlagsEphemeral,
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
-					}
-					return
-				}
-
+				streamId := stream.Id(strings.TrimPrefix(customID, "refresh_"))
 				a, ok := bot.broadcaster.Agents()[streamId]
 				if !ok {
 					bot.sugar.Debugw("Agent not found", "streamId", streamId)
