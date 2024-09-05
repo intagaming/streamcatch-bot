@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"io"
+	"streamcatch-bot/broadcaster/platform"
 	"sync"
 	"testing"
 	"time"
@@ -156,8 +157,8 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamPlatforms: map[string]StreamPlatform{
-				"twitch": &TestTwitchPlatform{
+			StreamPlatforms: map[platform.Name]StreamPlatform{
+				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
 						<-streamGoneOnlineChan
 						return nil
@@ -292,8 +293,8 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamPlatforms: map[string]StreamPlatform{
-				"twitch": &TestTwitchPlatform{
+			StreamPlatforms: map[platform.Name]StreamPlatform{
+				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
 						select {}
 					},
@@ -350,8 +351,8 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamPlatforms: map[string]StreamPlatform{
-				"twitch": &TestTwitchPlatform{
+			StreamPlatforms: map[platform.Name]StreamPlatform{
+				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
 						<-streamGoneOnlineChan
 						return nil
@@ -429,8 +430,8 @@ func TestAgent(t *testing.T) {
 			StreamAvailableChecker: func(streamId int64) (bool, error) {
 				return true, nil
 			},
-			StreamPlatforms: map[string]StreamPlatform{
-				"twitch": &TestTwitchPlatform{
+			StreamPlatforms: map[platform.Name]StreamPlatform{
+				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
 						<-streamGoneOnlineChan
 						return nil
@@ -514,8 +515,8 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamPlatforms: map[string]StreamPlatform{
-				"twitch": &TestTwitchPlatform{
+			StreamPlatforms: map[platform.Name]StreamPlatform{
+				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
 						<-streamGoneOnlineChan
 						return nil
@@ -584,8 +585,8 @@ func TestAgent(t *testing.T) {
 					return false, nil
 				}
 			},
-			StreamPlatforms: map[string]StreamPlatform{
-				"twitch": &TestTwitchPlatform{
+			StreamPlatforms: map[platform.Name]StreamPlatform{
+				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error {
 						<-streamGoneOnlineChan
 						return nil

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"streamcatch-bot/broadcaster/type"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,7 +33,7 @@ type Agent struct {
 }
 
 func (a *Agent) Run() {
-	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+	b := a.ctx.Value(_type.broadcasterCtxKey{}).(*Broadcaster)
 	clock := b.config.Clock
 
 	// Goroutine to check for stream timeout
@@ -216,7 +217,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 }
 
 func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
-	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+	b := a.ctx.Value(_type.broadcasterCtxKey{}).(*Broadcaster)
 	clock := b.config.Clock
 	streamerRetryTimer := clock.NewTimer(0)
 	go func() {
@@ -258,7 +259,7 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 }
 
 func (a *Agent) checkTimeout() {
-	b := a.ctx.Value(broadcasterCtxKey{}).(*Broadcaster)
+	b := a.ctx.Value(_type.broadcasterCtxKey{}).(*Broadcaster)
 	clock := b.config.Clock
 	if clock.Now().After(a.Stream.ScheduledEndAt) {
 		if a.Stream.Status == GoneLive {

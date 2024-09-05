@@ -1,4 +1,4 @@
-package platforms
+package platform
 
 import (
 	"bytes"
@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-var localOnlineMap = make(map[int64]bool)
+var (
+	localOnlineMap      = make(map[int64]bool)
+	Local          Name = "local"
+)
 
 func SetLocalOnline(streamerId int64) {
 	localOnlineMap[streamerId] = true

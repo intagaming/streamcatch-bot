@@ -8,6 +8,7 @@ import (
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"os/exec"
+	"streamcatch-bot/broadcaster/platform"
 	"strings"
 	"time"
 )
@@ -32,7 +33,7 @@ type Config struct {
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) FfmpegCmder
 	StreamAvailableChecker        func(streamId int64) (bool, error)
 	Helix                         *helix.Client
-	StreamPlatforms               map[string]StreamPlatform
+	StreamPlatforms               map[platform.Name]StreamPlatform
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
 }
@@ -74,7 +75,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	stream := Stream{
 		Id:             idCount,
 		Url:            url,
-		Platform:       "local",
+		Platform:       platform.Local,
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,
@@ -103,20 +104,20 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener Strea
 		return nil, err
 	}
 
-	var platform string
+	var platformName platform.Name
 	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
-		platform = "youtube"
+		platformName = platform.YouTube
 	} else if strings.Contains(url, "twitch.tv") {
-		platform = "twitch"
+		platformName = platform.Twitch
 	} else {
-		platform = "generic"
+		platformName = platform.Generic
 	}
 
 	idCount += 1
 	stream := Stream{
 		Id:             idCount,
 		Url:            url,
-		Platform:       platform,
+		Platform:       platformName,
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,

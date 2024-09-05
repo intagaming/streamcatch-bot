@@ -15,7 +15,7 @@ import (
 	"os/signal"
 	"strconv"
 	"streamcatch-bot/broadcaster"
-	"streamcatch-bot/broadcaster/platforms"
+	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/discord"
 )
 
@@ -118,19 +118,19 @@ func main() {
 			}
 			return true, nil
 		},
-		StreamPlatforms: map[string]broadcaster.StreamPlatform{
-			"twitch": &platforms.TwitchStreamPlatform{
+		StreamPlatforms: map[platform.Name]broadcaster.StreamPlatform{
+			platform.Twitch: &platform.TwitchStreamPlatform{
 				HelixClient:     helixClient,
 				TwitchAuthToken: twitchAuthToken,
 			},
-			"youtube": &platforms.YoutubeStreamPlatform{},
-			"generic": &platforms.GenericStreamPlatform{},
-			"local":   &platforms.LocalStreamPlatform{},
+			platform.YouTube: &platform.YoutubeStreamPlatform{},
+			platform.Generic: &platform.GenericStreamPlatform{},
+			platform.Local:   &platform.LocalStreamPlatform{},
 		},
 		StreamerInfoFetcher: func(ctx context.Context, stream *broadcaster.Stream) (*broadcaster.StreamInfo, error) {
 			switch stream.Platform {
-			case "twitch":
-				info, err := platforms.FetchTwitchStreamerInfo(helixClient, stream.Url)
+			case platform.Twitch:
+				info, err := platform.FetchTwitchStreamerInfo(helixClient, stream.Url)
 				if err != nil {
 					return nil, err
 				}
@@ -160,7 +160,7 @@ func main() {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			platforms.SetLocalOnline(streamId)
+			platform.SetLocalOnline(streamId)
 		})
 		http.HandleFunc("/local/stop", func(w http.ResponseWriter, r *http.Request) {
 			streamId, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
@@ -196,11 +196,11 @@ func main() {
 
 type localStreamListener struct{}
 
-func (l *localStreamListener) Status(stream *broadcaster.Stream) {
+func (l *localStreamListener) Status(*broadcaster.Stream) {
 }
 
-func (l *localStreamListener) StreamStarted(stream *broadcaster.Stream) {
+func (l *localStreamListener) StreamStarted(*broadcaster.Stream) {
 }
 
-func (l *localStreamListener) Close(stream *broadcaster.Stream) {
+func (l *localStreamListener) Close(*broadcaster.Stream) {
 }

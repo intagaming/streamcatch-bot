@@ -1,4 +1,4 @@
-package platforms
+package platform
 
 import (
 	"bytes"
@@ -13,15 +13,18 @@ import (
 	"time"
 )
 
-type GenericStreamPlatform struct{}
+var YouTube Name = "youtube"
 
-//type GenericStreamlinkInfo struct {
+//type YoutubeStreamlinkInfo struct {
 //	Metadata struct {
+//		Id string `json:"id"`
 //	} `json:"metadata"`
 //}
 
-func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
-	//var streamlinkInfo GenericStreamlinkInfo
+type YoutubeStreamPlatform struct{}
+
+func (y *YoutubeStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *broadcaster.Stream) error {
+	//var youtubeStreamlinkInfo YoutubeStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
@@ -32,16 +35,16 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 		case <-ticker.C:
 			statusCheckCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "-j")
 			output, _ := statusCheckCmd.CombinedOutput()
-			if strings.Contains(string(output), `"plugin": "`) {
-				//if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
+			if strings.Contains(string(output), `"plugin": "youtube"`) {
+				//if err := json.Unmarshal(output, &youtubeStreamlinkInfo); err != nil {
 				//	sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
 				//}
 				// Now online
-				sugar.Debugw("Detected stream live", "url", stream.Url)
-				//return &streamlinkInfo, nil
+				sugar.Debugw("Detected youtube stream live", "id", stream.Id, "url", stream.Url)
+				//return &youtubeStreamlinkInfo, nil
 				return nil
 			} else if strings.Contains(string(output), `No playable streams`) {
-				sugar.Debugw("Retrying getting stream", "url", stream.Url)
+				sugar.Debugw("Retrying getting stream", "id", stream.Id, "url", stream.Url)
 				continue
 			} else {
 				sugar.Errorw("Doesn't recognize the output from the streamlink stream checking command", "output", string(output))
@@ -49,10 +52,9 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 			}
 		}
 	}
-
 }
 
-func (g *GenericStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (y *YoutubeStreamPlatform) Stream(ctx context.Context, stream *broadcaster.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	streamlinkCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "720p60,720p,480p,360p",
 		"--loglevel", "warning", "--stdout")
 	streamlinkCmd.Stderr = streamlinkErrBuf

@@ -5,13 +5,14 @@ import (
 	"context"
 	"go.uber.org/zap"
 	"io"
+	"streamcatch-bot/broadcaster/platform"
 	"time"
 )
 
 type Stream struct {
 	Id             int64
 	Url            string
-	Platform       string
+	Platform       platform.Name
 	CreatedAt      time.Time
 	ScheduledEndAt time.Time
 	TerminatedAt   time.Time

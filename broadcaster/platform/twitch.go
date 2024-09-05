@@ -1,4 +1,4 @@
-package platforms
+package platform
 
 import (
 	"bytes"
@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	contextCancelledErr = errors.New("context canceled")
-	malformedTwitchUrl  = errors.New("couldn't find Twitch streamer name")
-	channelNotFoundErr  = errors.New("channel not found")
+	contextCancelledErr      = errors.New("context canceled")
+	malformedTwitchUrl       = errors.New("couldn't find Twitch streamer name")
+	channelNotFoundErr       = errors.New("channel not found")
+	Twitch              Name = "twitch"
 )
 
 func GetTwitchStreamerNameFromUrl(twitchUrl string) (string, error) {
