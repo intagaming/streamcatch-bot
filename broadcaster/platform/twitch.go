@@ -80,6 +80,7 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 			})
 			if err != nil {
 				sugar.Debugw("Failed to get streams. Retrying", "streamerName", streamerName, "error", err)
+				continue
 			}
 			if len(streams.Data.Streams) == 0 {
 				sugar.Debugw("Retrying getting stream", "streamerName", streamerName,
