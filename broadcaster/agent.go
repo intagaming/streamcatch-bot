@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -29,7 +28,7 @@ type Agent struct {
 	ctxCancel                     context.CancelFunc
 	Stream                        *Stream
 	ffmpegCmder                   FfmpegCmder
-	dummyStreamFfmpegCmderCreator func(ctx context.Context) DummyStreamFfmpegCmder
+	dummyStreamFfmpegCmderCreator func(ctx context.Context) FfmpegCmder
 }
 
 func (a *Agent) Run() {
@@ -181,13 +180,6 @@ func (a *Agent) Close(reason EndedReason, error error) {
 	a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", error)
 }
 
-type DummyStreamFfmpegCmder interface {
-	SetStdout(pipe io.Writer)
-	SetStderr(pipe io.Writer)
-	Start() error
-	Wait() error
-}
-
 func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) {
 	go func() {
 		dummyFfmpegCmd := a.dummyStreamFfmpegCmderCreator(ctx)
@@ -216,17 +208,6 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 		a.Close(Errored, fmt.Errorf("dummy stream ffmpeg failed; ffmpeg output: %s", dummyFfmpegCombinedBuf.String()))
 		return
 	}()
-}
-
-func isMediaServersFault(stderr string) bool {
-	return strings.Contains(stderr, "Connection refused") || strings.Contains(stderr, "Broken pipe")
-}
-
-type FfmpegCmder interface {
-	SetStdin(pipe io.Reader)
-	SetStderr(pipe io.Writer)
-	Start() error
-	Wait() error
 }
 
 func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {

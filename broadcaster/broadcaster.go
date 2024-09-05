@@ -1,9 +1,7 @@
 package broadcaster
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
@@ -14,6 +12,32 @@ import (
 	"strings"
 	"time"
 )
+
+const (
+	ScheduledEndDuration = 30 * time.Minute
+)
+
+var (
+	errInvalidUrl = errors.New("invalid stream url")
+)
+
+type Config struct {
+	TwitchClientId                string
+	TwitchClientSecret            string
+	TwitchAuthToken               string
+	MediaServerRtspHost           string
+	MediaServerPublishUser        string
+	MediaServerPublishPassword    string
+	MediaServerApiUrl             string
+	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
+	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) FfmpegCmder
+	StreamAvailableChecker        func(streamId int64) (bool, error)
+	StreamWaiter                  func(agent *Agent) error
+	Helix                         *helix.Client
+	Streamer                      func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error
+	Clock                         quartz.Clock
+	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
+}
 
 type Broadcaster struct {
 	sugar  *zap.SugaredLogger
@@ -34,76 +58,7 @@ func (b *Broadcaster) MediaServerPublishPassword() string {
 	return b.config.MediaServerPublishPassword
 }
 
-type broadcasterCtxKey struct{}
-
-type StreamInfo struct {
-	ThumbnailUrl string
-}
-type Config struct {
-	TwitchClientId                string
-	TwitchClientSecret            string
-	TwitchAuthToken               string
-	MediaServerRtspHost           string
-	MediaServerPublishUser        string
-	MediaServerPublishPassword    string
-	MediaServerApiUrl             string
-	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId int64) FfmpegCmder
-	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder
-	StreamAvailableChecker        func(streamId int64) (bool, error)
-	StreamWaiter                  func(agent *Agent) error
-	Helix                         *helix.Client
-	Streamer                      func(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error
-	Clock                         quartz.Clock
-	StreamerInfoFetcher           func(ctx context.Context, stream *Stream) (*StreamInfo, error)
-}
-
-type Stream struct {
-	Id             int64
-	Url            string
-	Platform       string
-	CreatedAt      time.Time
-	ScheduledEndAt time.Time
-	TerminatedAt   time.Time
-	Status         StreamStatus
-	EndedReason    *EndedReason
-	EndedError     error
-	Listener       StreamStatusListener
-	ThumbnailUrl   string
-}
-
-type StreamStatus int
-
-const (
-	Waiting StreamStatus = iota
-	GoneLive
-	Ended
-)
-
-type EndedReason int
-
-const (
-	ForceStopped EndedReason = iota
-	Timeout
-	StreamEnded
-	Fulfilled
-	Errored
-)
-
-type StreamStatusListener interface {
-	Status(stream *Stream)
-	StreamStarted(stream *Stream)
-	Close(stream *Stream)
-}
-
-var (
-	errInvalidUrl = errors.New("invalid stream url")
-)
-
 var idCount int64 = 0
-
-const (
-	ScheduledEndDuration = 30 * time.Minute
-)
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	b := Broadcaster{
@@ -189,7 +144,7 @@ func (b *Broadcaster) HandleStream(stream *Stream) *Agent {
 		ctxCancel:   cancel,
 		Stream:      stream,
 		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, stream.Id),
-		dummyStreamFfmpegCmderCreator: func(ctx context.Context) DummyStreamFfmpegCmder {
+		dummyStreamFfmpegCmderCreator: func(ctx context.Context) FfmpegCmder {
 			return b.config.DummyStreamFfmpegCmderCreator(ctx, stream.Url)
 		},
 	}
@@ -212,61 +167,5 @@ func (b *Broadcaster) RefreshAgent(streamId int64, newScheduledEndAt time.Time) 
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
 	a.Stream.ScheduledEndAt = newScheduledEndAt
-	return nil
-}
-
-func NewRealStreamWaiter(sugar *zap.SugaredLogger, helixClient *helix.Client, a *Agent) error {
-	var err error
-	switch a.Stream.Platform {
-	case "twitch":
-		_, err = WaitForTwitchOnline(sugar, a.ctx, helixClient, a.Stream)
-	case "youtube":
-		_, err = WaitForYoutubeOnline(sugar, a.ctx, a.Stream)
-	case "generic":
-		_, err = WaitForGenericOnline(sugar, a.ctx, a.Stream)
-	case "local":
-		err = WaitForLocalOnline(sugar, a.ctx, a.Stream)
-	default:
-		return errors.New("Unknown platform: " + a.Stream.Platform)
-	}
-	return err
-}
-
-func Streamer(ctx context.Context, broadcaster *Broadcaster, stream *Stream, pipeWrite *io.PipeWriter) error {
-	var streamlinkErrBuf bytes.Buffer
-	var ffmpegErrBuf bytes.Buffer
-
-	var err error
-	switch {
-	case stream.Platform == "twitch":
-		err = StreamFromTwitch(ctx, stream, broadcaster.config.TwitchAuthToken, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	case stream.Platform == "youtube":
-		err = StreamFromYoutube(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	case stream.Platform == "generic":
-		err = StreamGeneric(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	case stream.Platform == "local":
-		err = StreamLocal(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
-	default:
-		return errors.New("Unknown platform: " + stream.Platform)
-	}
-	var ffmpegAndStreamlinkErrStr []byte
-
-	if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {
-		ffmpegAndStreamlinkErrStr, err = json.Marshal(struct {
-			StreamlinkError string `json:"streamlink_error,omitempty"`
-			FfmpegError     string `json:"ffmpeg_error,omitempty"`
-		}{
-			StreamlinkError: streamlinkErrBuf.String(),
-			FfmpegError:     ffmpegErrBuf.String(),
-		})
-		if err != nil {
-			broadcaster.sugar.Panicw("Failed to marshal error", "streamId", stream.Id, "error", err)
-		}
-	}
-
-	if err != nil {
-		return fmt.Errorf("errored while streaming from platform. FFMPEG and Streamlink output: %s; error: %w", ffmpegAndStreamlinkErrStr, err)
-	}
-
 	return nil
 }

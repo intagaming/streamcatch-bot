@@ -40,6 +40,8 @@ func (t *testFfmpegCmder) SetStdin(pipe io.Reader) {
 	t.stdin = pipe
 }
 
+func (t *testFfmpegCmder) SetStdout(pipe io.Writer) {}
+
 func (t *testFfmpegCmder) SetStderr(pipe io.Writer) {
 }
 
@@ -57,6 +59,9 @@ type testDummyStreamFfmpegCmder struct {
 	stdout          io.Writer
 	waitToStart     bool
 	waitToStartChan chan struct{}
+}
+
+func (t *testDummyStreamFfmpegCmder) SetStdin(pipe io.Reader) {
 }
 
 func (t *testDummyStreamFfmpegCmder) SetStdout(pipe io.Writer) {
@@ -121,7 +126,7 @@ func TestAgent(t *testing.T) {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
-			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
 				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
 					ctx: ctx,
 				}
@@ -259,7 +264,7 @@ func TestAgent(t *testing.T) {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
-			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
 				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
 					ctx: ctx,
 				}
@@ -313,7 +318,7 @@ func TestAgent(t *testing.T) {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
-			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
 				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
 					ctx: ctx,
 				}
@@ -387,7 +392,7 @@ func TestAgent(t *testing.T) {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
-			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
 				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
 					ctx: ctx,
 				}
@@ -463,7 +468,7 @@ func TestAgent(t *testing.T) {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
-			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
 				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
 					ctx: ctx,
 				}
@@ -500,6 +505,7 @@ func TestAgent(t *testing.T) {
 
 		streamGoneOnlineChan <- struct{}{}
 
+		// TODO: fragile
 		advanceUntilCond(mClock, func() bool {
 			return listener.status == GoneLive
 		}, 5*time.Second)
@@ -527,7 +533,7 @@ func TestAgent(t *testing.T) {
 				ffmpegCmder.ctx = ctx
 				return ffmpegCmder
 			},
-			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) DummyStreamFfmpegCmder {
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
 				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
 					ctx:         ctx,
 					waitToStart: true,
