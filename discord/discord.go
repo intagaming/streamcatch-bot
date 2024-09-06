@@ -128,7 +128,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 			}
 			if strings.HasPrefix(customID, "recatch_") {
 				streamUrl := strings.TrimPrefix(customID, "recatch_")
-				bot.newStreamCatch(i.Interaction, streamUrl)
+				bot.newStreamCatch(i.Interaction, streamUrl, false)
 
 				return
 			}
@@ -178,10 +178,10 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 	}
 }
 
-func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
+func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent bool) {
 	ctx := context.Background()
 	sl := bot.NewStreamListener(i)
-	s, err := bot.broadcaster.MakeStream(ctx, url, sl)
+	s, err := bot.broadcaster.MakeStream(ctx, url, sl, permanent)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
 		err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
@@ -217,8 +217,9 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string) {
 
 func (bot *Bot) handleStreamCatchCmd(i *discordgo.InteractionCreate, opts optionMap) {
 	url := opts["url"].StringValue()
+	permanent := opts["permanent"].BoolValue()
 
-	bot.newStreamCatch(i.Interaction, url)
+	bot.newStreamCatch(i.Interaction, url, permanent)
 }
 
 const streamcatchCommandName = "streamcatch"
@@ -233,6 +234,12 @@ var commands = []*discordgo.ApplicationCommand{
 				Description: "Stream URL",
 				Type:        discordgo.ApplicationCommandOptionString,
 				Required:    true,
+			},
+			{
+				Name:        "permanent",
+				Description: "Whether to catch the stream 24/7 or just catch one. If permanent, can only watch when stream is online (there is no standby stream from StreamCatch).",
+				Type:        discordgo.ApplicationCommandOptionBoolean,
+				Required:    false,
 			},
 		},
 	},

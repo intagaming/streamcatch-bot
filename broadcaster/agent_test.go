@@ -107,6 +107,23 @@ func (t *TestTwitchPlatform) Stream(ctx context.Context, stream *stream.Stream, 
 func TestAgent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
+	advance := func(mClock *quartz.Mock, desired time.Duration) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for {
+			p, ok := mClock.Peek()
+			if !ok || p > desired {
+				mClock.Advance(desired).MustWait(ctx)
+				<-time.After(10 * time.Millisecond)
+				break
+			}
+			mClock.Advance(p).MustWait(ctx)
+			desired -= p
+			// Give time for agent's goroutine to run logic
+			<-time.After(10 * time.Millisecond)
+		}
+	}
+
 	advanceUntilCond := func(mClock *quartz.Mock, cond func() bool, desired time.Duration) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -119,7 +136,7 @@ func TestAgent(t *testing.T) {
 			}
 			mClock.Advance(p).MustWait(ctx)
 			desired -= p
-			// Give time for agent's goroutine to catch the Ticker's channel
+			// Give time for agent's goroutine to run logic
 			<-time.After(10 * time.Millisecond)
 			if cond() {
 				return
@@ -261,7 +278,7 @@ func TestAgent(t *testing.T) {
 		}, 30*time.Second)
 
 		if streamReadErr != nil {
-			t.Fatalf("Failed to read stdin ffmpeg cmder: %v", err)
+			t.Fatalf("Failed to read stdin ffmpeg cmder: %v", streamReadErr)
 		}
 
 		assert.Equal(t, streamerData, ffmpegCmderIn)
@@ -615,5 +632,133 @@ func TestAgent(t *testing.T) {
 		agent.Close(stream.ReasonForceStopped, nil)
 
 		// We're happy if there's no runtime error so far.
+	})
+
+	t.Run("PermanentStreamHappyCase", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		ffmpegCmder := &testFfmpegCmder{}
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+		streamGoneOnlineChan := make(chan struct{}, 1)
+		streamerData := []byte{69, 110, 105, 99, 101}
+		streamEndChan := make(chan struct{}, 1)
+
+		listener := testListener{}
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
+				ffmpegCmder.ctx = ctx
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
+				if listener.status == stream.StatusGoneLive {
+					return true, nil
+				}
+				return false, nil
+			},
+			StreamPlatforms: map[name.Name]stream.Platform{
+				platform.Twitch: &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+						<-streamGoneOnlineChan
+						return nil
+					},
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						_, err := pipeWrite.Write(streamerData)
+						if err != nil {
+							return fmt.Errorf("unexpected streamer write error: %w", err)
+						}
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-streamEndChan:
+						}
+						return nil
+					},
+				},
+			},
+			Clock: mClock,
+		})
+
+		s := stream.Stream{
+			Id:             "test",
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: time.Time{},
+			Listener:       &listener,
+			Permanent:      true,
+		}
+		broadcaster.HandleStream(&s)
+
+		assert.Equal(t, time.Time{}, s.ScheduledEndAt)
+
+		// Stream should have not started yet
+		advance(mClock, 1*time.Minute)
+		assert.False(t, listener.streamStarted)
+
+		// Stream gone online
+		assert.NotEqual(t, listener.status, stream.StatusGoneLive)
+
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.streamStarted
+		}, 5*time.Second)
+
+		// Make sure ScheduledEndAt is set
+		assert.NotEqual(t, time.Time{}, s.ScheduledEndAt)
+
+		// expect ffmpegCmder to receive stream data from Streamer
+		var streamReadErr error
+		ffmpegCmderIn := make([]byte, len(streamerData))
+		isRead := false
+		go func() {
+			_, streamReadErr = ffmpegCmder.stdin.Read(ffmpegCmderIn)
+			isRead = true
+		}()
+		advanceUntilCond(mClock, func() bool {
+			return isRead
+		}, 30*time.Second)
+
+		if streamReadErr != nil {
+			t.Fatalf("Failed to read stdin ffmpeg cmder: %v", streamReadErr)
+		}
+
+		assert.Equal(t, streamerData, ffmpegCmderIn)
+
+		assert.NotEqual(t, listener.status, stream.StatusWaiting)
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.status == stream.StatusWaiting
+		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
+
+		assert.NotNil(t, listener.closeReason)
+		assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
+
+		assert.Equal(t, time.Time{}, s.ScheduledEndAt)
+
+		// Reset to listen on stream started again
+		listener.streamStarted = false
+
+		// make sure stream is still listening
+		advance(mClock, time.Minute)
+
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return listener.streamStarted
+		}, 5*time.Second)
 	})
 }

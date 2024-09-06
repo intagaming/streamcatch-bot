@@ -94,7 +94,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	return &s, nil
 }
 
-func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
+func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener stream.StatusListener, permanent bool) (*stream.Stream, error) {
 	checkCmd := exec.CommandContext(ctx, "streamlink", "--can-handle-url", url)
 	err := checkCmd.Run()
 	if err != nil {
@@ -128,6 +128,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,
+		Permanent:      permanent,
 	}
 
 	info, err := b.config.StreamerInfoFetcher(ctx, &s)
@@ -141,7 +142,10 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 
 func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
+	var cancel context.CancelFunc = nil
+	if !s.Permanent {
+		ctx, cancel = context.WithCancel(ctx)
+	}
 	ctx = context.WithValue(ctx, stream.BroadcasterCtxKey{}, b)
 
 	agent := Agent{
@@ -159,10 +163,12 @@ func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 
 	b.agents[agent.Stream.Id] = &agent
 
-	go func() {
-		<-ctx.Done()
-		delete(b.agents, agent.Stream.Id)
-	}()
+	if !s.Permanent {
+		go func() {
+			<-ctx.Done()
+			delete(b.agents, agent.Stream.Id)
+		}()
+	}
 
 	return &agent
 }

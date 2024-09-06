@@ -17,12 +17,12 @@ type Stream struct {
 	Platform       name.Name
 	CreatedAt      time.Time
 	ScheduledEndAt time.Time
-	TerminatedAt   time.Time
 	Status         Status
 	EndedReason    *EndedReason
 	EndedError     error
 	Listener       StatusListener
 	ThumbnailUrl   string
+	Permanent      bool
 }
 
 type Status int
