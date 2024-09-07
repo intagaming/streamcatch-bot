@@ -204,6 +204,9 @@ func (a *Agent) StreamPoller(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-retryTimer.C:
+			if a.Stream.Permanent && a.Stream.Status != stream.StatusGoneLive {
+				continue
+			}
 			err := try()
 			if err != nil {
 				if !a.Stream.Permanent || a.Stream.Status == stream.StatusGoneLive {
