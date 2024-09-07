@@ -143,10 +143,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 
 func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 	ctx := context.Background()
-	var cancel context.CancelFunc = nil
-	if !s.Permanent {
-		ctx, cancel = context.WithCancel(ctx)
-	}
+	ctx, cancel := context.WithCancel(ctx)
 	ctx = context.WithValue(ctx, stream.BroadcasterCtxKey{}, b)
 
 	agent := Agent{

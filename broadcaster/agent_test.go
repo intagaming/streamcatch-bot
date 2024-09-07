@@ -335,7 +335,8 @@ func TestAgent(t *testing.T) {
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
-						select {}
+						<-ctx.Done()
+						return errors.New("should not go here")
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
@@ -758,7 +759,7 @@ func TestAgent(t *testing.T) {
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
-		}, 50*time.Second)
+		}, 5*time.Second)
 
 		// Make sure ScheduledEndAt is set
 		assert.NotEqual(t, time.Time{}, s.ScheduledEndAt)
@@ -807,5 +808,57 @@ func TestAgent(t *testing.T) {
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
 		}, 5*time.Second)
+	})
+
+	t.Run("PermanentStreamForceClosedShouldNotContinue", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		var ffmpegCmder *testFfmpegCmder
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+
+		listener := testListener{}
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
+				ffmpegCmder = &testFfmpegCmder{
+					ctx: ctx,
+				}
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
+				return false, nil
+			},
+			StreamPlatforms: map[name.Name]stream.Platform{
+				platform.Twitch: &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+						<-ctx.Done()
+						return errors.New("should not go here")
+					},
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						return errors.New("should not be called")
+					},
+				},
+			},
+			Clock: mClock,
+		})
+
+		s := stream.Stream{
+			Id:             "test",
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: time.Time{},
+			Listener:       &listener,
+			Permanent:      true,
+		}
+		a := broadcaster.HandleStream(&s)
+
+		a.Close(stream.ReasonForceStopped, nil)
+
+		assert.NotNil(t, a.ctx.Err())
 	})
 }

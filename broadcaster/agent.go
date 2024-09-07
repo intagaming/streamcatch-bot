@@ -44,7 +44,7 @@ func (a *Agent) Run() {
 	// This loop will be running only once if the stream is not permanent.
 	for {
 		a.HandleOneStreamInstance()
-		if !a.Stream.Permanent {
+		if !a.Stream.Permanent || a.ctx.Err() != nil {
 			break
 		}
 	}
@@ -160,14 +160,12 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 	if errors.Is(err, context.Canceled) || (a.ctx.Err() != nil) || (a.iterationCtx != nil && a.iterationCtx.Err() != nil) {
 		return
 	}
-	if !a.Stream.Permanent {
-		a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
+	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
 		a.ctxCancel()
+		a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
 	} else {
-		if a.iterationCtxCancel != nil {
-			a.iterationCtxCancel()
-			a.sugar.Debugw("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
-		}
+		a.iterationCtxCancel()
+		a.sugar.Debugw("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
 	}
 
 	if !a.Stream.Permanent {
