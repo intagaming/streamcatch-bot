@@ -157,7 +157,7 @@ out:
 }
 
 func (a *Agent) Close(reason stream.EndedReason, err error) {
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || (a.ctx.Err() != nil) || (a.iterationCtx != nil && a.iterationCtx.Err() != nil) {
 		return
 	}
 	if !a.Stream.Permanent {

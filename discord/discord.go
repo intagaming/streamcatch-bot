@@ -192,7 +192,7 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 			},
 		})
 		if err != nil {
-			bot.sugar.Panicf("could not respond to interaction: %s", err)
+			bot.sugar.Errorf("could not respond to interaction: %s", err)
 		}
 		return
 	}
