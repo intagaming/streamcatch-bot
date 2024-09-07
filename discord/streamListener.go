@@ -1,13 +1,10 @@
 package discord
 
 import (
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster/stream"
 	"sync"
-)
-
-var (
-	streamToStreamListener = make(map[stream.Id]*StreamListener)
 )
 
 type StreamListener struct {
@@ -15,10 +12,6 @@ type StreamListener struct {
 	interaction  *discordgo.Interaction
 	message      *discordgo.Message
 	messageMutex sync.Mutex
-}
-
-func (sl *StreamListener) Register(streamId stream.Id) {
-	streamToStreamListener[streamId] = sl
 }
 
 func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
@@ -38,11 +31,12 @@ func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
 		return
 	}
 
+	content := fmt.Sprintf("<@%s>", interactionAuthor(sl.interaction).ID) + msg.Content
 	if sl.message != nil {
 		_, err := sl.bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			ID:         sl.message.ID,
 			Channel:    sl.message.ChannelID,
-			Content:    &msg.Content,
+			Content:    &content,
 			Components: &msg.Components,
 			Embeds:     &msg.Embeds,
 		})
@@ -51,7 +45,7 @@ func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
 		}
 	} else {
 		discordMsg, err := sl.bot.session.FollowupMessageCreate(sl.interaction, true, &discordgo.WebhookParams{
-			Content:    msg.Content,
+			Content:    content,
 			Components: msg.Components,
 			Embeds:     msg.Embeds,
 		})

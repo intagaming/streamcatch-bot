@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 var (
 	ExtendDuration = 10 * time.Minute
+	StreamAuthor   = make(map[stream.Id]*discordgo.User)
 )
 
 type Bot struct {
@@ -48,6 +50,10 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 			customID := i.MessageComponentData().CustomID
 			if strings.HasPrefix(customID, "stop_") {
 				streamId := stream.Id(strings.TrimPrefix(customID, "stop_"))
+				author := interactionAuthor(i.Interaction)
+				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+					return
+				}
 				a, ok := bot.broadcaster.Agents()[streamId]
 				if !ok {
 					bot.sugar.Debugw("Agent not found", "streamId", streamId)
@@ -76,6 +82,10 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 			}
 			if strings.HasPrefix(customID, "refresh_") {
 				streamId := stream.Id(strings.TrimPrefix(customID, "refresh_"))
+				author := interactionAuthor(i.Interaction)
+				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+					return
+				}
 				a, ok := bot.broadcaster.Agents()[streamId]
 				if !ok {
 					bot.sugar.Debugw("Agent not found", "streamId", streamId)
@@ -116,7 +126,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseUpdateMessage,
 					Data: &discordgo.InteractionResponseData{
-						Content:    streamStartedMessage.Content,
+						Content:    fmt.Sprintf("<@%s>", author.ID) + streamStartedMessage.Content,
 						Components: streamStartedMessage.Components,
 						Embeds:     streamStartedMessage.Embeds,
 					},
@@ -180,6 +190,7 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent bool) {
 	ctx := context.Background()
+
 	sl := bot.NewStreamListener(i)
 	s, err := bot.broadcaster.MakeStream(ctx, url, sl, permanent)
 	if err != nil {
@@ -196,7 +207,9 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		}
 		return
 	}
-	sl.Register(s.Id)
+
+	author := interactionAuthor(i)
+	StreamAuthor[s.Id] = author
 
 	bot.broadcaster.HandleStream(s)
 
@@ -215,6 +228,13 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	}
 }
 
+func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
+	if i.Member != nil {
+		return i.Member.User
+	}
+	return i.User
+}
+
 func (bot *Bot) handleStreamCatchCmd(i *discordgo.InteractionCreate, opts optionMap) {
 	url := opts["url"].StringValue()
 	var permanent bool
@@ -223,6 +243,19 @@ func (bot *Bot) handleStreamCatchCmd(i *discordgo.InteractionCreate, opts option
 	}
 
 	bot.newStreamCatch(i.Interaction, url, permanent)
+}
+
+func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
+	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "You can only interact with your own stream catch.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+	}
 }
 
 const streamcatchCommandName = "streamcatch"
@@ -265,3 +298,11 @@ var (
 		},
 	}
 )
+
+func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, author *discordgo.User) bool {
+	if StreamAuthor[streamId].ID != author.ID {
+		bot.SendUnauthorizedInteractionResponse(i)
+		return false
+	}
+	return true
+}
