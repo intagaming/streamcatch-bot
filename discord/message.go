@@ -23,11 +23,44 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	case stream.ReasonFulfilled:
 		desc = "Stream was catch successfully. Catch you on the next one!"
 	case stream.ReasonForceStopped:
-		desc = "The stream catch has been stopped by the user."
+		if !s.Permanent {
+			desc = "The stream catch has been stopped by the user."
+		} else {
+			desc = "The permanent stream catch has been stopped by the user."
+		}
 	case stream.ReasonErrored:
 		desc = "An error has occurred."
 	default:
 		desc = "The stream catch was stopped for unknown reason."
+	}
+
+	var components []discordgo.MessageComponent
+	if !s.Permanent {
+		components = []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label:    "Re-catch",
+						Style:    discordgo.SecondaryButton,
+						CustomID: fmt.Sprintf("recatch_%s", s.Url),
+					},
+				},
+			},
+		}
+	} else {
+		if *s.EndedReason == stream.ReasonForceStopped {
+			components = []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.Button{
+							Label:    "Re-catch (Permanent)",
+							Style:    discordgo.SecondaryButton,
+							CustomID: fmt.Sprintf("permanent_recatch_%s", s.Url),
+						},
+					},
+				},
+			}
+		}
 	}
 
 	return &StreamMessageContent{
@@ -51,17 +84,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 				},
 			},
 		},
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.Button{
-						Label:    "Re-catch",
-						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("recatch_%s", s.Url),
-					},
-				},
-			},
-		},
+		Components: components,
 	}
 }
 
@@ -118,8 +141,12 @@ func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageCo
 	}
 }
 
-func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageContent {
-	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, stream.Id)
+func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream) *StreamMessageContent {
+	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, s.Id)
+	isPermanentStr := "No"
+	if s.Permanent {
+		isPermanentStr = "Yes"
+	}
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
@@ -127,7 +154,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageC
 				Description: "Streamer went online, watch now!",
 				URL:         link,
 				Thumbnail: &discordgo.MessageEmbedThumbnail{
-					URL: stream.ThumbnailUrl,
+					URL: s.ThumbnailUrl,
 				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
@@ -136,7 +163,12 @@ func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageC
 					},
 					{
 						Name:   "Stream URL",
-						Value:  stream.Url,
+						Value:  s.Url,
+						Inline: true,
+					},
+					{
+						Name:   "Permanent?",
+						Value:  isPermanentStr,
 						Inline: true,
 					},
 				},
@@ -153,7 +185,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageC
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%s", stream.Id),
+						CustomID: fmt.Sprintf("stop_%s", s.Id),
 					},
 				},
 			},
@@ -161,19 +193,34 @@ func (bot *Bot) MakeStreamGoneLiveMessage(stream *stream.Stream) *StreamMessageC
 	}
 }
 
-func (bot *Bot) MakeRequestReceivedMessage(stream *stream.Stream) *StreamMessageContent {
+func (bot *Bot) MakeRequestReceivedMessage(s *stream.Stream) *StreamMessageContent {
+	var description string
+	if !s.Permanent {
+		description = "Request to catch is received. Stay tuned for a followup!"
+	} else {
+		description = "StreamCatch scheduled. We will notify you when the stream comes online."
+	}
+	isPermanentStr := "No"
+	if s.Permanent {
+		isPermanentStr = "Yes"
+	}
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
-				Description: "Request to catch is received. Stay tuned for a followup!",
+				Description: description,
 				Thumbnail: &discordgo.MessageEmbedThumbnail{
-					URL: stream.ThumbnailUrl,
+					URL: s.ThumbnailUrl,
 				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
 						Name:   "Stream URL",
-						Value:  stream.Url,
+						Value:  s.Url,
+						Inline: true,
+					},
+					{
+						Name:   "Permanent?",
+						Value:  isPermanentStr,
 						Inline: true,
 					},
 				},
