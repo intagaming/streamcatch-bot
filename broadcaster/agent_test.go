@@ -37,11 +37,12 @@ func (tl *testListener) StreamStarted(*stream.Stream) {
 }
 
 type testFfmpegCmder struct {
-	ctx   context.Context
-	stdin io.Reader
+	ctx     context.Context
+	stdin   *io.PipeReader
+	started bool
 }
 
-func (t *testFfmpegCmder) SetStdin(pipe io.Reader) {
+func (t *testFfmpegCmder) SetStdin(pipe *io.PipeReader) {
 	t.stdin = pipe
 }
 
@@ -51,6 +52,7 @@ func (t *testFfmpegCmder) SetStderr(io.Writer) {
 }
 
 func (t *testFfmpegCmder) Start() error {
+	t.started = true
 	return t.ctx.Err()
 }
 
@@ -62,11 +64,12 @@ func (t *testFfmpegCmder) Wait() error {
 type testDummyStreamFfmpegCmder struct {
 	ctx             context.Context
 	stdout          io.Writer
+	started         bool
 	waitToStart     bool
 	waitToStartChan chan struct{}
 }
 
-func (t *testDummyStreamFfmpegCmder) SetStdin(io.Reader) {
+func (t *testDummyStreamFfmpegCmder) SetStdin(*io.PipeReader) {
 }
 
 func (t *testDummyStreamFfmpegCmder) SetStdout(pipe io.Writer) {
@@ -77,6 +80,7 @@ func (t *testDummyStreamFfmpegCmder) SetStderr(io.Writer) {
 }
 
 func (t *testDummyStreamFfmpegCmder) Start() error {
+	t.started = true
 	if t.waitToStart {
 		select {
 		case <-t.waitToStartChan:
@@ -564,7 +568,7 @@ func TestAgent(t *testing.T) {
 		// TODO: fragile
 		advanceUntilCond(mClock, func() bool {
 			return listener.status == stream.StatusGoneLive
-		}, 5*time.Second)
+		}, 10*time.Second)
 
 		assert.False(t, listener.streamStarted)
 
@@ -636,7 +640,7 @@ func TestAgent(t *testing.T) {
 
 	t.Run("PermanentStreamHappyCase", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
-		ffmpegCmder := &testFfmpegCmder{}
+		var ffmpegCmder *testFfmpegCmder
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamerData := []byte{69, 110, 105, 99, 101}
@@ -645,7 +649,9 @@ func TestAgent(t *testing.T) {
 		listener := testListener{}
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
-				ffmpegCmder.ctx = ctx
+				ffmpegCmder = &testFfmpegCmder{
+					ctx: ctx,
+				}
 				return ffmpegCmder
 			},
 			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
@@ -696,9 +702,22 @@ func TestAgent(t *testing.T) {
 
 		assert.Equal(t, time.Time{}, s.ScheduledEndAt)
 
+		// assert that stream won't be closed because timeout
+		advance(mClock, 30*time.Second)
+		assert.Nil(t, listener.closeReason)
+
 		// Stream should have not started yet
 		advance(mClock, 1*time.Minute)
 		assert.False(t, listener.streamStarted)
+
+		// TODO: assert ffmpeg cmd not started (not sending data to media server)
+		assert.Nil(t, ffmpegCmder)
+		assert.Nil(t, dummyFfmpegCmder)
+		//ffmpegCmderIn := make([]byte, 1)
+		//_, err := ffmpegCmder.stdin.Read(ffmpegCmderIn)
+		//if err != nil {
+		//	t.Fatalf("Failed to read stdin ffmpeg cmder: %v", err)
+		//}
 
 		// Stream gone online
 		assert.NotEqual(t, listener.status, stream.StatusGoneLive)

@@ -13,7 +13,7 @@ type RealFfmpegCmder struct {
 	cmd *exec.Cmd
 }
 
-func (r *RealFfmpegCmder) SetStdin(pipe io.Reader) {
+func (r *RealFfmpegCmder) SetStdin(pipe *io.PipeReader) {
 	r.cmd.Stdin = pipe
 }
 
@@ -59,7 +59,7 @@ func NewRealDummyStreamFfmpegCmder(ctx context.Context, streamUrl string) Ffmpeg
 }
 
 type FfmpegCmder interface {
-	SetStdin(pipe io.Reader)
+	SetStdin(pipe *io.PipeReader)
 	SetStdout(pipe io.Writer)
 	SetStderr(pipe io.Writer)
 	Start() error
