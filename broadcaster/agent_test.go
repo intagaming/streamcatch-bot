@@ -149,12 +149,23 @@ func TestAgent(t *testing.T) {
 		assert.True(t, cond())
 	}
 
+	newStreamPollerTrap := func(mClock *quartz.Mock) *quartz.Trap {
+		return mClock.Trap().TickerFunc("StreamPoller")
+	}
+
+	waitForTrap := func(trap *quartz.Trap) {
+		call, err := trap.Wait(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		call.Release()
+	}
+
 	t.Run("HappyCase", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
 		ffmpegCmder := &testFfmpegCmder{}
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamAvailableChan := make(chan struct{}, 1)
-		streamAvailableCalledTime := 0
 		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamerData := []byte{69, 110, 105, 99, 101}
 		streamEndChan := make(chan struct{}, 1)
@@ -172,7 +183,6 @@ func TestAgent(t *testing.T) {
 				return dummyFfmpegCmder
 			},
 			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
-				streamAvailableCalledTime += 1
 				select {
 				case <-streamAvailableChan:
 					return true, nil
@@ -216,7 +226,13 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
+
+		streamPollerTrap := newStreamPollerTrap(mClock)
+		defer streamPollerTrap.Close()
+
 		broadcaster.HandleStream(&s)
+
+		waitForTrap(streamPollerTrap)
 
 		// expect StreamCatch stream available
 		assert.False(t, listener.streamStarted)
@@ -338,15 +354,21 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
+
+		streamPollerTrap := newStreamPollerTrap(mClock)
+		defer streamPollerTrap.Close()
+
 		broadcaster.HandleStream(&s)
+
+		waitForTrap(streamPollerTrap)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
-		}, time.Second)
+		}, 5*time.Second)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.status == stream.StatusEnded
-		}, s.ScheduledEndAt.Sub(mClock.Now())+5*time.Second)
+		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
 		assert.NotNil(t, listener.closeReason)
 		assert.Equal(t, stream.ReasonTimeout, *listener.closeReason)
@@ -402,11 +424,17 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
+
+		streamPollerTrap := newStreamPollerTrap(mClock)
+		defer streamPollerTrap.Close()
+
 		broadcaster.HandleStream(&s)
+
+		waitForTrap(streamPollerTrap)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
-		}, time.Second)
+		}, 5*time.Second)
 
 		assert.Equal(t, stream.StatusWaiting, listener.status)
 
@@ -478,11 +506,17 @@ func TestAgent(t *testing.T) {
 			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
 			Listener:       &listener,
 		}
+
+		streamPollerTrap := newStreamPollerTrap(mClock)
+		defer streamPollerTrap.Close()
+
 		broadcaster.HandleStream(&s)
+
+		waitForTrap(streamPollerTrap)
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
-		}, time.Second)
+		}, 5*time.Second)
 
 		assert.Equal(t, stream.StatusWaiting, listener.status)
 
@@ -724,7 +758,7 @@ func TestAgent(t *testing.T) {
 
 		advanceUntilCond(mClock, func() bool {
 			return listener.streamStarted
-		}, 5*time.Second)
+		}, 50*time.Second)
 
 		// Make sure ScheduledEndAt is set
 		assert.NotEqual(t, time.Time{}, s.ScheduledEndAt)

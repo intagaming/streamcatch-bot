@@ -197,28 +197,26 @@ func (a *Agent) StreamPoller(ctx context.Context) {
 		return nil
 	}
 
-	retryTimer := clock.NewTimer(0)
-	defer retryTimer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-retryTimer.C:
-			if a.Stream.Permanent && a.Stream.Status != stream.StatusGoneLive {
-				continue
-			}
-			err := try()
-			if err != nil {
-				if !a.Stream.Permanent || a.Stream.Status == stream.StatusGoneLive {
-					a.sugar.Debugw("Stream poller: Failed to get stream info. Retrying", "streamId", a.Stream.Id, "error", err)
-				}
-				retryTimer.Reset(3 * time.Second)
-				continue
-			}
-			a.sugar.Debugw("Stream poller: Done", "streamId", a.Stream.Id)
-			a.Stream.Listener.StreamStarted(a.Stream)
-			return
+	tickerCtx, tickerCancel := context.WithCancel(ctx)
+	t := clock.TickerFunc(tickerCtx, 3*time.Second, func() error {
+		if a.Stream.Permanent && a.Stream.Status != stream.StatusGoneLive {
+			return nil
 		}
+		err := try()
+		if err != nil {
+			if !a.Stream.Permanent || a.Stream.Status == stream.StatusGoneLive {
+				a.sugar.Debugw("StreamPoller: Failed to get stream info. Retrying", "streamId", a.Stream.Id, "error", err)
+			}
+			return nil
+		}
+		a.sugar.Debugw("StreamPoller: Done", "streamId", a.Stream.Id)
+		a.Stream.Listener.StreamStarted(a.Stream)
+		tickerCancel()
+		return nil
+	}, "StreamPoller")
+	err := t.Wait()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		a.sugar.Warnw("StreamPoller: Should have not error", "streamId", a.Stream.Id, "err", err)
 	}
 }
 
