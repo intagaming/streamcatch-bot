@@ -71,7 +71,7 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	return &b
 }
 
-func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
+func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener, permanent bool) (*stream.Stream, error) {
 	id, err := gonanoid.New()
 	if err != nil {
 		return nil, err
@@ -83,6 +83,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,
+		Permanent:      permanent,
 	}
 
 	info, err := b.config.StreamerInfoFetcher(ctx, &s)

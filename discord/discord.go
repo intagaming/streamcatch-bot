@@ -237,7 +237,7 @@ var commands = []*discordgo.ApplicationCommand{
 			},
 			{
 				Name:        "permanent",
-				Description: "Whether to catch the stream 24/7 or just catch one. If permanent, can only watch when stream is online (there is no standby stream from StreamCatch).",
+				Description: "Whether to catch the stream 24/7 or catch just one.",
 				Type:        discordgo.ApplicationCommandOptionBoolean,
 				Required:    false,
 			},

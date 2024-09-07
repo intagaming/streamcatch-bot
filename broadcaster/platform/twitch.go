@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"net/url"
-	"os/exec"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
 	"strings"
@@ -97,43 +96,14 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 }
 
 func (t *TwitchStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
-	args := []string{stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
+	args := []string{"streamlink", stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
 	if t.TwitchAuthToken != "" {
 		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", t.TwitchAuthToken))
 	}
-	streamlinkCmd := exec.CommandContext(ctx, "streamlink", args...)
-	streamlinkCmd.Stderr = streamlinkErrBuf
-
-	ffmpegCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
-		"-re", "-i", "pipe:", "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "-")
-
-	pipe, err := streamlinkCmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create streamlink stdout pipe: %w", err)
-	}
-	ffmpegCmd.Stdin = pipe
-
-	ffmpegCmd.Stdout = pipeWrite
-	ffmpegCmd.Stderr = ffmpegErrBuf
-
-	err = streamlinkCmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start streamlink: %w", err)
-	}
-	err = ffmpegCmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
-
-	err = ffmpegCmd.Wait()
-	if err != nil {
-		return fmt.Errorf("failed to wait ffmpeg: %w", err)
-	}
-	if streamlinkCmd.ProcessState == nil {
-		err := streamlinkCmd.Process.Kill()
-		if err != nil {
-			return fmt.Errorf("failed to kill streamlink: %w", err)
-		}
-	}
-	return nil
+	return Stream(ctx,
+		args,
+		[]string{
+			"ffmpeg", "-hide_banner", "-loglevel", "error",
+			"-re", "-i", "pipe:", "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "-",
+		}, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
 }

@@ -39,7 +39,7 @@ func (a *Agent) Broadcaster() *Broadcaster {
 }
 
 func (a *Agent) Run() {
-	a.sugar.Debugw("Agent running", "streamId", a.Stream.Id)
+	a.sugar.Debugw("Agent running", "streamId", a.Stream.Id, "permanent", a.Stream.Permanent)
 
 	// This loop will be running only once if the stream is not permanent.
 	for {
@@ -161,10 +161,12 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 		return
 	}
 	if !a.Stream.Permanent {
+		a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
 		a.ctxCancel()
 	} else {
 		if a.iterationCtxCancel != nil {
 			a.iterationCtxCancel()
+			a.sugar.Debugw("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
 		}
 	}
 
@@ -179,8 +181,6 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 
 	a.Stream.Listener.Status(a.Stream)
 	a.Stream.Listener.Close(a.Stream)
-
-	a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
 }
 
 func (a *Agent) StreamPoller(ctx context.Context) {
