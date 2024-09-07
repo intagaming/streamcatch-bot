@@ -1,3 +1,4 @@
+# Compose for dev only
 services:
   streamcatch-bot:
     image: streamcatch-bot
@@ -24,6 +25,8 @@ services:
     image: bluenviron/mediamtx:1.8.5
     ports:
       - "8888:8888"
+      - "9997:9997"
+      - "8554:8554"
     restart: unless-stopped
     networks:
       - streamcatch

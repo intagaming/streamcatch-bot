@@ -168,7 +168,7 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 		a.sugar.Debugw("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
 	}
 
-	if !a.Stream.Permanent {
+	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
 		a.Stream.Status = stream.StatusEnded
 	} else {
 		a.Stream.Status = stream.StatusWaiting

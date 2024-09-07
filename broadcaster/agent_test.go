@@ -860,5 +860,6 @@ func TestAgent(t *testing.T) {
 		a.Close(stream.ReasonForceStopped, nil)
 
 		assert.NotNil(t, a.ctx.Err())
+		assert.Equal(t, stream.StatusEnded, s.Status)
 	})
 }

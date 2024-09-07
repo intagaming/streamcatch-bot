@@ -15,6 +15,10 @@ import (
 var (
 	ExtendDuration = 10 * time.Minute
 	StreamAuthor   = make(map[stream.Id]*discordgo.User)
+	GuildStreams   = make(map[string]map[stream.Id]struct{})
+	StreamGuild    = make(map[stream.Id]string)
+	UserStreams    = make(map[string]map[stream.Id]struct{})
+	StreamUser     = make(map[stream.Id]string)
 )
 
 type Bot struct {
@@ -210,6 +214,20 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 
 	author := interactionAuthor(i)
 	StreamAuthor[s.Id] = author
+	if i.Member != nil {
+		if _, ok := GuildStreams[i.GuildID]; !ok {
+			GuildStreams[i.GuildID] = make(map[stream.Id]struct{})
+		}
+		GuildStreams[i.GuildID][s.Id] = struct{}{}
+		StreamGuild[s.Id] = i.GuildID
+	} else {
+		if _, ok := UserStreams[i.User.ID]; !ok {
+			UserStreams[i.User.ID] = make(map[stream.Id]struct{})
+		}
+		UserStreams[i.User.ID][s.Id] = struct{}{}
+		StreamGuild[s.Id] = i.GuildID
+		StreamUser[s.Id] = i.User.ID
+	}
 
 	bot.broadcaster.HandleStream(s)
 
@@ -259,6 +277,7 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 }
 
 const streamcatchCommandName = "streamcatch"
+const streamcatchManageCommandName = "scmanage"
 
 var commands = []*discordgo.ApplicationCommand{
 	{
@@ -279,6 +298,17 @@ var commands = []*discordgo.ApplicationCommand{
 			},
 		},
 	},
+	{
+		Name:        streamcatchManageCommandName,
+		Description: "Manage StreamCatch",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "cancel-all-permanent",
+				Description: "Cancel all permanent streams scheduled.",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+			},
+		},
+	},
 }
 
 var (
@@ -296,6 +326,9 @@ var (
 			data := i.ApplicationCommandData()
 			bot.handleStreamCatchCmd(i, parseOptions(data.Options))
 		},
+		streamcatchManageCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
+			bot.handleStreamCatchManageCmd(i)
+		},
 	}
 )
 
@@ -305,4 +338,52 @@ func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, 
 		return false
 	}
 	return true
+}
+
+func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	switch options[0].Name {
+	case "cancel-all-permanent":
+		var streams map[stream.Id]struct{}
+		var ok bool
+		if i.Member != nil {
+			streams, ok = GuildStreams[i.GuildID]
+		} else {
+			streams, ok = UserStreams[i.User.ID]
+		}
+		if !ok || len(streams) == 0 {
+			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "No permanent streams found.",
+					Flags:   discordgo.MessageFlagsEphemeral,
+				},
+			})
+			if err != nil {
+				bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+			}
+			return
+		}
+		for streamId := range streams {
+			a, ok := bot.broadcaster.Agents()[streamId]
+			if !ok {
+				bot.sugar.Errorw("Cannot find agent from stream", "streamId", streamId)
+				continue
+			}
+			if !a.Stream.Permanent {
+				continue
+			}
+			a.Close(stream.ReasonForceStopped, nil)
+		}
+		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "All permanent streams have been stopped.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		if err != nil {
+			bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+		}
+	}
 }

@@ -64,8 +64,27 @@ func (sl *StreamListener) StreamStarted(stream *stream.Stream) {
 	sl.UpdateStreamCatchMessage(stream)
 }
 
-func (sl *StreamListener) Close(stream *stream.Stream) {
-	sl.UpdateStreamCatchMessage(stream)
+func (sl *StreamListener) Close(s *stream.Stream) {
+	sl.UpdateStreamCatchMessage(s)
+	if s.Permanent && s.Status != stream.StatusEnded {
+		return
+	}
+	delete(StreamAuthor, s.Id)
+	if _, ok := StreamGuild[s.Id]; ok {
+		guildId := StreamGuild[s.Id]
+		delete(StreamGuild, s.Id)
+		delete(GuildStreams[guildId], s.Id)
+		if len(GuildStreams[guildId]) == 0 {
+			delete(GuildStreams, guildId)
+		}
+	} else {
+		userId := StreamUser[s.Id]
+		delete(StreamUser, s.Id)
+		delete(UserStreams[userId], s.Id)
+		if len(UserStreams[userId]) == 0 {
+			delete(UserStreams, userId)
+		}
+	}
 }
 
 func (bot *Bot) NewStreamListener(i *discordgo.Interaction) *StreamListener {
