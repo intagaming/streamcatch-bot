@@ -140,6 +140,12 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 				}
 				return
 			}
+			if strings.HasPrefix(customID, "permanent_recatch_") {
+				streamUrl := strings.TrimPrefix(customID, "permanent_recatch_")
+				bot.newStreamCatch(i.Interaction, streamUrl, true)
+
+				return
+			}
 			if strings.HasPrefix(customID, "recatch_") {
 				streamUrl := strings.TrimPrefix(customID, "recatch_")
 				bot.newStreamCatch(i.Interaction, streamUrl, false)
