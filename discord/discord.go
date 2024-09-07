@@ -217,7 +217,10 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 
 func (bot *Bot) handleStreamCatchCmd(i *discordgo.InteractionCreate, opts optionMap) {
 	url := opts["url"].StringValue()
-	permanent := opts["permanent"].BoolValue()
+	var permanent bool
+	if opt, ok := opts["permanent"]; ok {
+		permanent = opt.BoolValue()
+	}
 
 	bot.newStreamCatch(i.Interaction, url, permanent)
 }
