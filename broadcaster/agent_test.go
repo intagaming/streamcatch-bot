@@ -128,18 +128,18 @@ func TestAgent(t *testing.T) {
 		}
 	}
 
-	advanceUntilCond := func(mClock *quartz.Mock, cond func() bool, desired time.Duration) {
+	advanceUntilCond := func(mClock *quartz.Mock, cond func() bool, limitDuration time.Duration) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		for {
 			p, ok := mClock.Peek()
-			if !ok || p > desired {
-				mClock.Advance(desired).MustWait(ctx)
+			if !ok || p > limitDuration {
+				mClock.Advance(limitDuration).MustWait(ctx)
 				<-time.After(10 * time.Millisecond)
 				break
 			}
 			mClock.Advance(p).MustWait(ctx)
-			desired -= p
+			limitDuration -= p
 			// Give time for agent's goroutine to run logic
 			<-time.After(10 * time.Millisecond)
 			if cond() {
@@ -565,10 +565,9 @@ func TestAgent(t *testing.T) {
 
 		streamGoneOnlineChan <- struct{}{}
 
-		// TODO: fragile
 		advanceUntilCond(mClock, func() bool {
 			return listener.status == stream.StatusGoneLive
-		}, 10*time.Second)
+		}, 5*time.Second)
 
 		assert.False(t, listener.streamStarted)
 
@@ -710,14 +709,9 @@ func TestAgent(t *testing.T) {
 		advance(mClock, 1*time.Minute)
 		assert.False(t, listener.streamStarted)
 
-		// TODO: assert ffmpeg cmd not started (not sending data to media server)
+		// assert ffmpeg cmd not started (not sending data to media server)
 		assert.Nil(t, ffmpegCmder)
 		assert.Nil(t, dummyFfmpegCmder)
-		//ffmpegCmderIn := make([]byte, 1)
-		//_, err := ffmpegCmder.stdin.Read(ffmpegCmderIn)
-		//if err != nil {
-		//	t.Fatalf("Failed to read stdin ffmpeg cmder: %v", err)
-		//}
 
 		// Stream gone online
 		assert.NotEqual(t, listener.status, stream.StatusGoneLive)
