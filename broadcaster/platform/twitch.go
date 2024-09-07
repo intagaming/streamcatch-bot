@@ -58,10 +58,10 @@ type TwitchStreamPlatform struct {
 	TwitchAuthToken string
 }
 
-func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 	streamerName, err := GetTwitchStreamerNameFromUrl(stream.Url)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ticker := time.NewTicker(3 * time.Second)
@@ -69,11 +69,8 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 	for {
 		select {
 		case <-ctx.Done():
-			return contextCancelledErr
+			return nil, contextCancelledErr
 		case <-ticker.C:
-			//streams, err := t.helixClient.GetStreams(&helix.StreamsParams{
-			//	UserLogins: []string{streamerName},
-			//})
 			streams, err := t.HelixClient.GetStreams(&helix.StreamsParams{
 				UserLogins: []string{streamerName},
 			})
@@ -87,10 +84,8 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 					"rateLimitReset", streams.GetRateLimitReset())
 				continue
 			}
-			// Now online
 			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "id", streams.Data.Streams[0].ID)
-			//return &streams.Data.Streams[0], nil
-			return nil
+			return &name.WaitForOnlineData{StreamId: streams.Data.Streams[0].ID}, nil
 		}
 	}
 }

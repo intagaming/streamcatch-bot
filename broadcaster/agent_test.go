@@ -96,11 +96,11 @@ func (t *testDummyStreamFfmpegCmder) Wait() error {
 }
 
 type TestTwitchPlatform struct {
-	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error
+	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error)
 	stream        func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }
 
-func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 	return t.waitForOnline(sugar, ctx, stream)
 }
 
@@ -192,9 +192,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
-						return nil
+						return &name.WaitForOnlineData{}, nil
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						if streamerRetryUntilSuccess > 0 {
@@ -334,9 +334,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
-						return errors.New("should not go here")
+						return &name.WaitForOnlineData{}, errors.New("should not go here")
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
@@ -399,9 +399,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
-						return nil
+						return &name.WaitForOnlineData{}, nil
 
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
@@ -484,9 +484,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
-						return nil
+						return &name.WaitForOnlineData{}, nil
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
@@ -575,9 +575,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
-						return nil
+						return &name.WaitForOnlineData{}, nil
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
@@ -644,9 +644,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
-						return nil
+						return &name.WaitForOnlineData{}, nil
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
@@ -677,6 +677,8 @@ func TestAgent(t *testing.T) {
 		var ffmpegCmder *testFfmpegCmder
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamGoneOnlineChan := make(chan struct{}, 1)
+		//streamGoneOnlineIdChan := make(chan string, 1)
+		streamGoneOnlineId := "stream1"
 		streamerData := []byte{69, 110, 105, 99, 101}
 		streamEndChan := make(chan struct{}, 1)
 
@@ -702,9 +704,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
-						return nil
+						return &name.WaitForOnlineData{StreamId: streamGoneOnlineId}, nil
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						_, err := pipeWrite.Write(streamerData)
@@ -801,6 +803,14 @@ func TestAgent(t *testing.T) {
 
 		streamGoneOnlineChan <- struct{}{}
 
+		// Stream should not be handled because it's already catch
+		advance(mClock, time.Minute)
+		assert.Equal(t, stream.StatusWaiting, s.Status)
+
+		// Now new stream appears
+		streamGoneOnlineId = "stream2"
+		streamGoneOnlineChan <- struct{}{}
+
 		advanceUntilCond(mClock, func() bool {
 			return listener.status == stream.StatusGoneLive
 		}, 5*time.Second)
@@ -834,9 +844,9 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
-						return errors.New("should not go here")
+						return &name.WaitForOnlineData{}, errors.New("should not go here")
 					},
 					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")

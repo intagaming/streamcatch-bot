@@ -3,6 +3,7 @@ package platform
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"go.uber.org/zap"
 	"io"
@@ -17,37 +18,36 @@ var Generic name.Name = "generic"
 
 type GenericStreamPlatform struct{}
 
-//type GenericStreamlinkInfo struct {
-//	Metadata struct {
-//	} `json:"metadata"`
-//}
+type GenericStreamlinkInfo struct {
+	Metadata struct {
+		Id string `json:"id"`
+	} `json:"metadata"`
+}
 
-func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
-	//var streamlinkInfo GenericStreamlinkInfo
+func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+	var streamlinkInfo GenericStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return contextCancelledErr
+			return nil, contextCancelledErr
 		case <-ticker.C:
 			statusCheckCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "-j")
 			output, _ := statusCheckCmd.CombinedOutput()
 			if strings.Contains(string(output), `"plugin": "`) {
-				//if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
-				//	sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
-				//}
-				// Now online
+				if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
+					sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
+				}
 				sugar.Debugw("Detected stream live", "url", stream.Url)
-				//return &streamlinkInfo, nil
-				return nil
+				return &name.WaitForOnlineData{StreamId: streamlinkInfo.Metadata.Id}, nil
 			} else if strings.Contains(string(output), `No playable streams`) {
 				sugar.Debugw("Retrying getting stream", "url", stream.Url)
 				continue
 			} else {
 				sugar.Errorw("Doesn't recognize the output from the streamlink stream checking command", "output", string(output))
-				return errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
+				return nil, errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
 			}
 		}
 	}

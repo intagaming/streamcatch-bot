@@ -3,6 +3,7 @@ package platform
 import (
 	"bytes"
 	"context"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"go.uber.org/zap"
 	"io"
 	"streamcatch-bot/broadcaster/platform/name"
@@ -22,18 +23,22 @@ func SetLocalOnline(streamerId stream.Id) {
 
 type LocalStreamPlatform struct{}
 
-func (l *LocalStreamPlatform) WaitForOnline(_ *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) error {
+func (l *LocalStreamPlatform) WaitForOnline(_ *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return contextCancelledErr
+			return nil, contextCancelledErr
 		case <-ticker.C:
 			if _, ok := localOnlineMap[stream.Id]; ok {
 				select {
 				case <-localOnlineMap[stream.Id]:
-					return nil
+					streamId, err := gonanoid.New()
+					if err != nil {
+						panic(err)
+					}
+					return &name.WaitForOnlineData{StreamId: streamId}, nil
 				default:
 					continue
 				}

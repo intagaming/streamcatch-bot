@@ -23,6 +23,8 @@ type Stream struct {
 	Listener       StatusListener
 	ThumbnailUrl   string
 	Permanent      bool
+	// Used for permanent stream handling. Only catch a stream once.
+	PlatformLastStreamId *string
 }
 
 type Status int
@@ -56,6 +58,6 @@ type Info struct {
 type BroadcasterCtxKey struct{}
 
 type Platform interface {
-	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error
+	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) (*name.WaitForOnlineData, error)
 	Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }

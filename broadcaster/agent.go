@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
 	"time"
 
@@ -83,11 +84,21 @@ func (a *Agent) HandleOneStreamInstance() {
 		a.Close(stream.ReasonErrored, fmt.Errorf("unknown platform: %s", a.Stream.Platform))
 		return
 	}
-	waitError := platform.WaitForOnline(a.sugar, iterationCtx, a.Stream)
-	if waitError != nil {
-		a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
-		return
+	var data *name.WaitForOnlineData
+	for {
+		var waitError error
+		data, waitError = platform.WaitForOnline(a.sugar, iterationCtx, a.Stream)
+		if waitError != nil {
+			a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
+			return
+		}
+		if a.Stream.PlatformLastStreamId == nil || data.StreamId != *a.Stream.PlatformLastStreamId {
+			break
+		}
+		a.sugar.Debugw("WaitForOnline stream session is already handled. Waiting for new stream session.", "WaitForOnline StreamId", data.StreamId)
 	}
+
+	a.Stream.PlatformLastStreamId = &data.StreamId
 
 	// Now that stream came online, start streaming
 	if a.Stream.Permanent {
