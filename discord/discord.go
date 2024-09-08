@@ -71,7 +71,8 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 			}
 		case discordgo.InteractionMessageComponent:
 			customID := i.MessageComponentData().CustomID
-			if strings.HasPrefix(customID, "stop_") {
+			switch {
+			case strings.HasPrefix(customID, "stop_"):
 				streamId := stream.Id(strings.TrimPrefix(customID, "stop_"))
 				author := interactionAuthor(i.Interaction)
 				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
@@ -92,18 +93,14 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 					}
 					return
 				}
-
 				a.Close(stream.ReasonForceStopped, nil)
-
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,
 				})
 				if err != nil {
 					bot.sugar.Errorw("Failed to respond to interaction", "err", err)
 				}
-				return
-			}
-			if strings.HasPrefix(customID, "refresh_") {
+			case strings.HasPrefix(customID, "refresh_"):
 				streamId := stream.Id(strings.TrimPrefix(customID, "refresh_"))
 				author := interactionAuthor(i.Interaction)
 				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
@@ -124,12 +121,10 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 					}
 					return
 				}
-
 				newScheduledEndAt := time.Now().Add(ExtendDuration)
 				if a.Stream.ScheduledEndAt.After(newScheduledEndAt) {
 					newScheduledEndAt = a.Stream.ScheduledEndAt
 				}
-
 				err = bot.broadcaster.RefreshAgent(streamId, newScheduledEndAt)
 				if err != nil {
 					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -144,7 +139,6 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 					}
 					return
 				}
-
 				streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream)
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseUpdateMessage,
@@ -157,23 +151,13 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 				if err != nil {
 					bot.sugar.Errorw("could not update interaction", "err", err)
 				}
-				return
-			}
-			if strings.HasPrefix(customID, "permanent_recatch_") {
+			case strings.HasPrefix(customID, "permanent_recatch_"):
 				streamUrl := strings.TrimPrefix(customID, "permanent_recatch_")
 				bot.newStreamCatch(i.Interaction, streamUrl, true)
-
-				return
-			}
-			if strings.HasPrefix(customID, "recatch_") {
+			case strings.HasPrefix(customID, "recatch_"):
 				streamUrl := strings.TrimPrefix(customID, "recatch_")
 				bot.newStreamCatch(i.Interaction, streamUrl, false)
-
-				return
 			}
-			//if h, ok := componentsHandlers[i.MessageComponentData().CustomID]; ok {
-			//	h(&bot, i)
-			//}
 		}
 
 	})
@@ -197,16 +181,6 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 
 func (bot *Bot) Close() error {
 	return bot.session.Close()
-}
-
-type optionMap = map[string]*discordgo.ApplicationCommandInteractionDataOption
-
-func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (om optionMap) {
-	om = make(optionMap)
-	for _, opt := range options {
-		om[opt.Name] = opt
-	}
-	return
 }
 
 func (bot *Bot) EditMessage(channelId string, messageId string, message string) {
@@ -273,13 +247,6 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	}
 }
 
-func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
-	if i.Member != nil {
-		return i.Member.User
-	}
-	return i.User
-}
-
 func (bot *Bot) handleStreamCatchCmd(i *discordgo.InteractionCreate, opts optionMap) {
 	url := opts["url"].StringValue()
 	var permanent bool
@@ -302,67 +269,6 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 		bot.sugar.Errorw("Failed to respond to interaction", "err", err)
 	}
 }
-
-const streamcatchCommandName = "streamcatch"
-const streamcatchManageCommandName = "scmanage"
-
-var commands = []*discordgo.ApplicationCommand{
-	{
-		Name:        streamcatchCommandName,
-		Description: "Catch a stream the moment it comes online",
-		Options: []*discordgo.ApplicationCommandOption{
-			{
-				Name:        "url",
-				Description: "Stream URL",
-				Type:        discordgo.ApplicationCommandOptionString,
-				Required:    true,
-			},
-			{
-				Name:        "permanent",
-				Description: "Whether to catch the stream 24/7 or catch just one.",
-				Type:        discordgo.ApplicationCommandOptionBoolean,
-				Required:    false,
-			},
-		},
-	},
-	{
-		Name:        streamcatchManageCommandName,
-		Description: "Manage StreamCatch",
-		Options: []*discordgo.ApplicationCommandOption{
-			{
-				Name:        "list-permanent",
-				Description: "List all permanent streams scheduled by you.",
-				Type:        discordgo.ApplicationCommandOptionSubCommand,
-			},
-			{
-				Name:        "cancel-all-permanent",
-				Description: "Cancel all permanent streams scheduled by you.",
-				Type:        discordgo.ApplicationCommandOptionSubCommand,
-			},
-		},
-	},
-}
-
-var (
-	//componentsHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate){
-	//	"stop": func(bot *Bot, i *discordgo.InteractionCreate) {
-	//		a, ok := bot.broadcaster.Agents()[*streamId]
-	//		if !ok {
-	//			http.Error(w, "agent not found", 404)
-	//			return
-	//		}
-	//	},
-	//}
-	commandsHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate){
-		streamcatchCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
-			data := i.ApplicationCommandData()
-			bot.handleStreamCatchCmd(i, parseOptions(data.Options))
-		},
-		streamcatchManageCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
-			bot.handleStreamCatchManageCmd(i)
-		},
-	}
-)
 
 func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, author *discordgo.User) bool {
 	if StreamAuthor[streamId].ID != author.ID {
@@ -465,3 +371,72 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 		}
 	}
 }
+
+func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
+	if i.Member != nil {
+		return i.Member.User
+	}
+	return i.User
+}
+
+type optionMap = map[string]*discordgo.ApplicationCommandInteractionDataOption
+
+func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (om optionMap) {
+	om = make(optionMap)
+	for _, opt := range options {
+		om[opt.Name] = opt
+	}
+	return
+}
+
+const streamcatchCommandName = "streamcatch"
+const streamcatchManageCommandName = "scmanage"
+
+var commands = []*discordgo.ApplicationCommand{
+	{
+		Name:        streamcatchCommandName,
+		Description: "Catch a stream the moment it comes online",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "url",
+				Description: "Stream URL",
+				Type:        discordgo.ApplicationCommandOptionString,
+				Required:    true,
+			},
+			{
+				Name:        "permanent",
+				Description: "Whether to catch the stream 24/7 or catch just one.",
+				Type:        discordgo.ApplicationCommandOptionBoolean,
+				Required:    false,
+			},
+		},
+	},
+	{
+		Name:        streamcatchManageCommandName,
+		Description: "Manage StreamCatch",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "list-permanent",
+				Description: "List all permanent streams scheduled by you.",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+			},
+			{
+				Name:        "cancel-all-permanent",
+				Description: "Cancel all permanent streams scheduled by you.",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+			},
+		},
+	},
+}
+
+var (
+	commandsHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate){
+		streamcatchCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
+			data := i.ApplicationCommandData()
+			bot.handleStreamCatchCmd(i, parseOptions(data.Options))
+		},
+		streamcatchManageCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
+			bot.handleStreamCatchManageCmd(i)
+		},
+	}
+)
