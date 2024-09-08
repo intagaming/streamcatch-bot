@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"github.com/coder/quartz"
 	"github.com/go-redsync/redsync/v4"
-	"github.com/go-redsync/redsync/v4/redis/goredis"
+	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/nicklaw5/helix/v2"
-	"github.com/redis/go-redis/v9"
+	goredislib "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"log"
 	"net/http"
@@ -110,7 +110,7 @@ func main() {
 	}
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 
-	rdb := redis.NewClient(&redis.Options{
+	rdb := goredislib.NewClient(&goredislib.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
 		DB:       0,
@@ -118,7 +118,7 @@ func main() {
 	pool := goredis.NewPool(rdb)
 	rs := redsync.New(pool)
 
-	var scRedisClient sc_redis.SCRedisClient = sc_redis.RealSCRedisClient{Redis: rdb, Redsync: rs}
+	var scRedisClient sc_redis.SCRedisClient = &sc_redis.RealSCRedisClient{Redis: rdb, Redsync: rs}
 
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
@@ -162,10 +162,10 @@ func main() {
 			}
 		},
 		Clock:         quartz.NewReal(),
-		SCRedisClient: &scRedisClient,
+		SCRedisClient: scRedisClient,
 	})
 
-	bot := discord.New(sugar, bc, &scRedisClient)
+	bot := discord.New(sugar, bc, scRedisClient)
 
 	// get streams from db and handle
 	ctx := context.Background()
