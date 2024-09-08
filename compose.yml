@@ -1,3 +1,4 @@
+# Compose for dev only
 services:
   streamcatch-bot:
     image: streamcatch-bot
@@ -10,6 +11,8 @@ services:
       - APP_ID=${APP_ID}
       - BOT_TOKEN=${BOT_TOKEN}
       - MEDIA_SERVER_HLS_URL=${MEDIA_SERVER_HLS_URL}
+      - MEDIA_SERVER_PLAYBACK_URL=${MEDIA_SERVER_PLAYBACK_URL}
+      - MEDIA_SERVER_PLAYBACK_URL_PUBLIC=${MEDIA_SERVER_PLAYBACK_URL_PUBLIC}
       - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}
       - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}
       - TWITCH_AUTH_TOKEN=${TWITCH_AUTH_TOKEN}
@@ -24,6 +27,9 @@ services:
     image: bluenviron/mediamtx:1.8.5
     ports:
       - "8888:8888"
+      - "9996:9996"
+      - "9997:9997"
+      - "8554:8554"
     restart: unless-stopped
     networks:
       - streamcatch

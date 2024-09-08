@@ -71,7 +71,7 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	return &b
 }
 
-func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
+func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener, permanent bool) (*stream.Stream, error) {
 	id, err := gonanoid.New()
 	if err != nil {
 		return nil, err
@@ -83,6 +83,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,
+		Permanent:      permanent,
 	}
 
 	info, err := b.config.StreamerInfoFetcher(ctx, &s)
@@ -94,7 +95,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	return &s, nil
 }
 
-func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener stream.StatusListener) (*stream.Stream, error) {
+func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener stream.StatusListener, permanent bool) (*stream.Stream, error) {
 	checkCmd := exec.CommandContext(ctx, "streamlink", "--can-handle-url", url)
 	err := checkCmd.Run()
 	if err != nil {
@@ -128,6 +129,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 		CreatedAt:      time.Now(),
 		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
 		Listener:       listener,
+		Permanent:      permanent,
 	}
 
 	info, err := b.config.StreamerInfoFetcher(ctx, &s)
@@ -145,11 +147,13 @@ func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 	ctx = context.WithValue(ctx, stream.BroadcasterCtxKey{}, b)
 
 	agent := Agent{
-		sugar:       b.sugar,
-		ctx:         ctx,
-		ctxCancel:   cancel,
-		Stream:      s,
-		ffmpegCmder: b.config.FfmpegCmderCreator(ctx, b.config, s.Id),
+		sugar:     b.sugar,
+		ctx:       ctx,
+		ctxCancel: cancel,
+		Stream:    s,
+		ffmpegCmder: func(ctx context.Context) FfmpegCmder {
+			return b.config.FfmpegCmderCreator(ctx, b.config, s.Id)
+		},
 		dummyStreamFfmpegCmderCreator: func(ctx context.Context) FfmpegCmder {
 			return b.config.DummyStreamFfmpegCmderCreator(ctx, s.Url)
 		},
@@ -159,10 +163,12 @@ func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 
 	b.agents[agent.Stream.Id] = &agent
 
-	go func() {
-		<-ctx.Done()
-		delete(b.agents, agent.Stream.Id)
-	}()
+	if !s.Permanent {
+		go func() {
+			<-ctx.Done()
+			delete(b.agents, agent.Stream.Id)
+		}()
+	}
 
 	return &agent
 }

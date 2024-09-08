@@ -17,12 +17,15 @@ type Stream struct {
 	Platform       name.Name
 	CreatedAt      time.Time
 	ScheduledEndAt time.Time
-	TerminatedAt   time.Time
 	Status         Status
 	EndedReason    *EndedReason
 	EndedError     error
 	Listener       StatusListener
 	ThumbnailUrl   string
+	Permanent      bool
+	// Used for permanent stream handling. Only catch a stream once.
+	// Can be used to detect if the stream ever went online.
+	PlatformLastStreamId *string
 }
 
 type Status int
@@ -56,6 +59,6 @@ type Info struct {
 type BroadcasterCtxKey struct{}
 
 type Platform interface {
-	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) error
+	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) (*name.WaitForOnlineData, error)
 	Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }

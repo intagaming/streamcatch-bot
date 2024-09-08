@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
 	"time"
 
@@ -27,72 +28,55 @@ type Agent struct {
 	sugar                         *zap.SugaredLogger
 	ctx                           context.Context
 	ctxCancel                     context.CancelFunc
+	iterationCtx                  context.Context
+	iterationCtxCancel            context.CancelFunc
 	Stream                        *stream.Stream
-	ffmpegCmder                   FfmpegCmder
+	ffmpegCmder                   func(ctx context.Context) FfmpegCmder
 	dummyStreamFfmpegCmderCreator func(ctx context.Context) FfmpegCmder
 }
 
+func (a *Agent) Broadcaster() *Broadcaster {
+	return a.ctx.Value(stream.BroadcasterCtxKey{}).(*Broadcaster)
+}
+
 func (a *Agent) Run() {
-	b := a.ctx.Value(stream.BroadcasterCtxKey{}).(*Broadcaster)
+	a.sugar.Debugw("Agent running", "streamId", a.Stream.Id, "permanent", a.Stream.Permanent)
+
+	// This loop will be running only once if the stream is not permanent.
+	for {
+		a.HandleOneStreamInstance()
+		if !a.Stream.Permanent || a.ctx.Err() != nil {
+			break
+		}
+	}
+}
+
+func (a *Agent) HandleOneStreamInstance() {
+	a.sugar.Debugw("HandleOneStreamInstance being called", "streamId", a.Stream.Id)
+
+	b := a.Broadcaster()
 	clock := b.config.Clock
 
-	// Goroutine to check for stream timeout
-	go func() {
-		a.checkTimeout()
+	iterationCtx, cancelIterationCtx := context.WithCancel(a.ctx)
+	defer cancelIterationCtx()
 
-		ticker := clock.NewTicker(20 * time.Second)
-		for {
-			select {
-			case <-a.ctx.Done():
-				return
-			case <-ticker.C:
-				a.checkTimeout()
-			}
-		}
+	a.iterationCtx = iterationCtx
+	a.iterationCtxCancel = cancelIterationCtx
+	defer func() {
+		a.iterationCtx = nil
+		a.iterationCtxCancel = nil
 	}()
 
-	// Start the ffmpeg streamer agent
+	go a.TimeoutChecker(iterationCtx)
+	go a.StreamPoller(iterationCtx)
+
 	pipeRead, pipeWrite := io.Pipe()
-	a.startFfmpegStreamer(pipeRead)
-
-	// Start streaming placeholder stream
-	dummyStreamCtx, cancelDummyStreamCtx := context.WithCancel(a.ctx)
-	a.startDummyStream(dummyStreamCtx, pipeWrite)
+	dummyStreamCtx, cancelDummyStreamCtx := context.WithCancel(iterationCtx)
 	defer cancelDummyStreamCtx()
-
-	go func() {
-		try := func() error {
-			available, err := b.config.StreamAvailableChecker(a.Stream.Id)
-			if err != nil {
-				return err
-			}
-			if !available {
-				return StreamNotAvailableError
-			}
-			return nil
-		}
-
-		retryTimer := clock.NewTimer(0)
-		defer retryTimer.Stop()
-		for {
-			select {
-			case <-a.ctx.Done():
-				return
-			case <-retryTimer.C:
-				err := try()
-				if err != nil {
-					a.sugar.Debugw("Stream poller: Failed to get stream info. Retrying", "streamId", a.Stream.Id, "error", err)
-					retryTimer.Reset(3 * time.Second)
-					continue
-				}
-				a.sugar.Debugw("Stream poller: Done", "streamId", a.Stream.Id)
-				a.Stream.Listener.StreamStarted(a.Stream)
-				return
-			}
-		}
-	}()
-
-	a.sugar.Debugw("Agent initialized", "streamId", a.Stream.Id)
+	if !a.Stream.Permanent {
+		a.startFfmpegStreamer(iterationCtx, pipeRead)
+		a.startDummyStream(dummyStreamCtx, pipeWrite)
+	}
 
 	// Wait for stream to come online based on the platform
 	platform, ok := b.config.StreamPlatforms[a.Stream.Platform]
@@ -100,16 +84,26 @@ func (a *Agent) Run() {
 		a.Close(stream.ReasonErrored, fmt.Errorf("unknown platform: %s", a.Stream.Platform))
 		return
 	}
-	waitError := platform.WaitForOnline(a.sugar, a.ctx, a.Stream)
-	if a.ctx.Err() != nil {
-		return
-	}
-	if waitError != nil {
-		a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
-		return
+	var data *name.WaitForOnlineData
+	for {
+		var waitError error
+		data, waitError = platform.WaitForOnline(a.sugar, iterationCtx, a.Stream)
+		if waitError != nil {
+			a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
+			return
+		}
+		if a.Stream.PlatformLastStreamId == nil || data.StreamId != *a.Stream.PlatformLastStreamId {
+			break
+		}
+		a.sugar.Debugw("WaitForOnline stream session is already handled. Waiting for new stream session.", "WaitForOnline StreamId", data.StreamId)
 	}
 
+	a.Stream.PlatformLastStreamId = &data.StreamId
+
 	// Now that stream came online, start streaming
+	if a.Stream.Permanent {
+		a.startFfmpegStreamer(iterationCtx, pipeRead)
+	}
 
 	// Set stream gone online, and set timeout for the stream
 	if a.Stream.Status != stream.StatusGoneLive {
@@ -121,26 +115,27 @@ func (a *Agent) Run() {
 		a.Stream.Listener.Status(a.Stream)
 	}
 
-	// Stop the dummy stream
+	// Stop the dummy stream, if any
 	cancelDummyStreamCtx()
 
-	// Start the real stream, overriding the dummy stream.
+	// Start the real stream, overriding the dummy stream (if any).
 	// Because we are early, we will do some retry. If the stream is already
 	// going for more than some amount of time, we count it as a successful
 	// catch, assuming the streamer went offline, and won't retry.
 	timer := clock.NewTimer(0)
 	defer timer.Stop()
 	attempt := 1
+out:
 	for {
 		select {
-		case <-a.ctx.Done():
-			return
+		case <-iterationCtx.Done():
+			break out
 		case <-timer.C:
 			retryStartTime := clock.Now()
 
-			streamErr := Streamer(a.ctx, platform, b, a.Stream, pipeWrite)
+			streamErr := Streamer(iterationCtx, platform, b, a.Stream, pipeWrite)
 			if errors.Is(streamErr, context.Canceled) {
-				return
+				break out
 			}
 
 			retryEndTime := clock.Now()
@@ -156,7 +151,7 @@ func (a *Agent) Run() {
 			if streamErr != nil {
 				a.sugar.Debugw("Stream error", "streamId", a.Stream.Id, "error", streamErr)
 				a.Close(stream.ReasonErrored, streamErr)
-				return
+				break out
 			}
 
 			switch {
@@ -167,23 +162,87 @@ func (a *Agent) Run() {
 			default:
 				panic("should not be here")
 			}
+			break out
 		}
 	}
 }
 
-func (a *Agent) Close(reason stream.EndedReason, error error) {
-	if a.ctx.Err() != nil {
+func (a *Agent) Close(reason stream.EndedReason, err error) {
+	if errors.Is(err, context.Canceled) || (a.ctx.Err() != nil) || (a.iterationCtx != nil && a.iterationCtx.Err() != nil) {
 		return
 	}
-	a.ctxCancel()
+	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
+		a.ctxCancel()
+		a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
+	} else {
+		a.iterationCtxCancel()
+		a.sugar.Debugw("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
+	}
 
+	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
+		a.Stream.Status = stream.StatusEnded
+	} else {
+		a.Stream.Status = stream.StatusWaiting
+		a.Stream.ScheduledEndAt = time.Time{}
+	}
 	a.Stream.EndedReason = &reason
-	a.Stream.Status = stream.StatusEnded
-	a.Stream.EndedError = error
+	a.Stream.EndedError = err
+
 	a.Stream.Listener.Status(a.Stream)
 	a.Stream.Listener.Close(a.Stream)
+}
 
-	a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", error)
+func (a *Agent) StreamPoller(ctx context.Context) {
+	b := a.Broadcaster()
+	clock := b.config.Clock
+	try := func() error {
+		available, err := b.config.StreamAvailableChecker(a.Stream.Id)
+		if err != nil {
+			return err
+		}
+		if !available {
+			return StreamNotAvailableError
+		}
+		return nil
+	}
+
+	tickerCtx, tickerCancel := context.WithCancel(ctx)
+	t := clock.TickerFunc(tickerCtx, 3*time.Second, func() error {
+		if a.Stream.Permanent && a.Stream.Status != stream.StatusGoneLive {
+			return nil
+		}
+		err := try()
+		if err != nil {
+			if !a.Stream.Permanent || a.Stream.Status == stream.StatusGoneLive {
+				a.sugar.Debugw("StreamPoller: Failed to get stream info. Retrying", "streamId", a.Stream.Id, "error", err)
+			}
+			return nil
+		}
+		a.sugar.Debugw("StreamPoller: Done", "streamId", a.Stream.Id)
+		a.Stream.Listener.StreamStarted(a.Stream)
+		tickerCancel()
+		return nil
+	}, "StreamPoller")
+	err := t.Wait()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		a.sugar.Warnw("StreamPoller: Should have not error", "streamId", a.Stream.Id, "err", err)
+	}
+}
+
+func (a *Agent) TimeoutChecker(ctx context.Context) {
+	b := a.Broadcaster()
+	clock := b.config.Clock
+	a.checkTimeout()
+
+	ticker := clock.NewTicker(20 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.checkTimeout()
+		}
+	}
 }
 
 func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) {
@@ -195,6 +254,9 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 		dummyFfmpegCmd.SetStderr(&dummyFfmpegCombinedBuf)
 		err := dummyFfmpegCmd.Start()
 		if err != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return
+			}
 			a.Close(stream.ReasonErrored, fmt.Errorf("failed to start dummy stream ffmpeg: %w; ffmpeg output: %s", err, dummyFfmpegCombinedBuf.String()))
 			return
 		}
@@ -216,32 +278,34 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 	}()
 }
 
-func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
-	b := a.ctx.Value(stream.BroadcasterCtxKey{}).(*Broadcaster)
+func (a *Agent) startFfmpegStreamer(ctx context.Context, pipe *io.PipeReader) {
+	b := a.Broadcaster()
 	clock := b.config.Clock
 	streamerRetryTimer := clock.NewTimer(0)
 	go func() {
 		for {
 			select {
-			case <-a.ctx.Done():
+			case <-ctx.Done():
 				break
 			case <-streamerRetryTimer.C:
-				streamerFfmpegCmd := a.ffmpegCmder
+				streamerFfmpegCmd := a.ffmpegCmder(ctx)
 				var streamerFfmpegErrBuf bytes.Buffer
 				streamerFfmpegCmd.SetStdin(pipe)
 				streamerFfmpegCmd.SetStderr(&streamerFfmpegErrBuf)
 				err := streamerFfmpegCmd.Start()
 				if err != nil {
+					if errors.Is(ctx.Err(), context.Canceled) {
+						return
+					}
 					a.Close(stream.ReasonErrored, fmt.Errorf("failed to start ffmpeg cmd: %w", err))
 					return
 				}
 				err = streamerFfmpegCmd.Wait()
 				if err != nil {
+					if errors.Is(ctx.Err(), context.Canceled) {
+						return
+					}
 					a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for ffmpeg cmd: %w", err))
-					return
-				}
-
-				if a.ctx.Err() != nil {
 					return
 				}
 
@@ -259,7 +323,7 @@ func (a *Agent) startFfmpegStreamer(pipe *io.PipeReader) {
 }
 
 func (a *Agent) checkTimeout() {
-	b := a.ctx.Value(stream.BroadcasterCtxKey{}).(*Broadcaster)
+	b := a.Broadcaster()
 	clock := b.config.Clock
 	if clock.Now().After(a.Stream.ScheduledEndAt) {
 		if a.Stream.Status == stream.StatusGoneLive {
@@ -267,7 +331,7 @@ func (a *Agent) checkTimeout() {
 			a.Close(stream.ReasonFulfilled, nil)
 			return
 		}
-		if a.Stream.Status == stream.StatusWaiting {
+		if !a.Stream.Permanent && a.Stream.Status == stream.StatusWaiting {
 			a.sugar.Debugw("Agent timeout", "streamId", a.Stream.Id)
 			a.Close(stream.ReasonTimeout, nil)
 			return

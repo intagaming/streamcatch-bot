@@ -147,7 +147,8 @@ func main() {
 
 	if isDev {
 		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
-			s, err := bc.MakeLocalStream(context.Background(), r.URL.Query().Get("url"), &localStreamListener{})
+			permanent := r.URL.Query().Get("permanent") == "true"
+			s, err := bc.MakeLocalStream(context.Background(), r.URL.Query().Get("url"), &localStreamListener{}, permanent)
 			if err != nil {
 				panic(err)
 			}
