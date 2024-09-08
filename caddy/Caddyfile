@@ -1,3 +1,7 @@
-:{$PORT}
+{$HLS_DOMAIN} {
+    reverse_proxy {$MEDIA_SERVER_HLS_URL}
+}
 
-reverse_proxy {$TARGET}
+{$PLAYBACK_DOMAIN} {
+    reverse_proxy {$MEDIA_SERVER_PLAYBACK_URL}
+}
