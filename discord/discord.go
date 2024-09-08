@@ -85,7 +85,6 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 						Type: discordgo.InteractionResponseChannelMessageWithSource,
 						Data: &discordgo.InteractionResponseData{
 							Content: "The stream is not available anymore.",
-							Flags:   discordgo.MessageFlagsEphemeral,
 						},
 					})
 					if err != nil {
@@ -113,7 +112,6 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 						Type: discordgo.InteractionResponseChannelMessageWithSource,
 						Data: &discordgo.InteractionResponseData{
 							Content: "The stream is not available anymore.",
-							Flags:   discordgo.MessageFlagsEphemeral,
 						},
 					})
 					if err != nil {
@@ -131,7 +129,6 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 						Type: discordgo.InteractionResponseChannelMessageWithSource,
 						Data: &discordgo.InteractionResponseData{
 							Content: "An error occurred",
-							Flags:   discordgo.MessageFlagsEphemeral,
 						},
 					})
 					if err != nil {
@@ -194,9 +191,6 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent bool) {
 	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags: discordgo.MessageFlagsEphemeral,
-		},
 	})
 	if err != nil {
 		bot.sugar.Errorf("could not respond to interaction: %s", err)
@@ -262,7 +256,6 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: "You can only interact with your own stream catch.",
-			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
 	if err != nil {
@@ -294,7 +287,6 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
 					Content: "No permanent streams found.",
-					Flags:   discordgo.MessageFlagsEphemeral,
 				},
 			})
 			if err != nil {
@@ -321,7 +313,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: contentSb.String(),
-				Flags:   discordgo.MessageFlagsEphemeral | discordgo.MessageFlagsSuppressEmbeds,
+				Flags:   discordgo.MessageFlagsSuppressEmbeds,
 			},
 		})
 		if err != nil {
@@ -340,7 +332,6 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
 					Content: "No permanent streams found.",
-					Flags:   discordgo.MessageFlagsEphemeral,
 				},
 			})
 			if err != nil {
@@ -363,7 +354,6 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: "All permanent streams have been stopped.",
-				Flags:   discordgo.MessageFlagsEphemeral,
 			},
 		})
 		if err != nil {
