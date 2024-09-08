@@ -91,7 +91,7 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 }
 
 func (t *TwitchStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
-	args := []string{"streamlink", stream.Url, "720p60,720p,480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
+	args := []string{"streamlink", stream.Url, "480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
 	if t.TwitchAuthToken != "" {
 		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", t.TwitchAuthToken))
 	}

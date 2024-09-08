@@ -56,8 +56,7 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 
 func (g *GenericStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	return Stream(ctx,
-		[]string{"streamlink", stream.Url, "720p60,720p,480p,360p",
-			"--loglevel", "warning", "--stdout"},
+		[]string{"streamlink", stream.Url, "480p,360p", "--loglevel", "warning", "--stdout"},
 		[]string{
 			"ffmpeg", "-hide_banner", "-loglevel", "error",
 			"-re", "-i", "pipe:", "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "-",
