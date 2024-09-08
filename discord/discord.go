@@ -218,21 +218,27 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 }
 
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent bool) {
-	ctx := context.Background()
+	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		bot.sugar.Errorf("could not respond to interaction: %s", err)
+	}
 
 	sl := bot.NewStreamListener(i)
+	ctx := context.Background()
 	s, err := bot.broadcaster.MakeStream(ctx, url, sl, permanent)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
-		err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "Failed to create stream.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
+		content := "Failed to create stream."
+		_, err := bot.session.InteractionResponseEdit(i, &discordgo.WebhookEdit{
+			Content: &content,
 		})
 		if err != nil {
-			bot.sugar.Errorf("could not respond to interaction: %s", err)
+			bot.sugar.Errorf("could not edit interaction: %s", err)
 		}
 		return
 	}
@@ -257,14 +263,10 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	bot.broadcaster.HandleStream(s)
 
 	msg := bot.MakeRequestReceivedMessage(s)
-	err = bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content:    msg.Content,
-			Components: msg.Components,
-			Embeds:     msg.Embeds,
-			Flags:      discordgo.MessageFlagsEphemeral,
-		},
+	_, err = bot.session.InteractionResponseEdit(i, &discordgo.WebhookEdit{
+		Content:    &msg.Content,
+		Components: &msg.Components,
+		Embeds:     &msg.Embeds,
 	})
 	if err != nil {
 		bot.sugar.Errorw("could not respond to interaction", "err", err)

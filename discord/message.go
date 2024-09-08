@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"streamcatch-bot/broadcaster/stream"
+	"strings"
 	"time"
 )
 
@@ -48,37 +49,47 @@ func (bot *Bot) GetPlaybackURL(s *stream.Stream) (string, error) {
 }
 
 func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
-	var desc string
+	descSb := strings.Builder{}
 	switch *s.EndedReason {
 	case stream.ReasonStreamEnded:
-		desc = "The stream had ended."
+		descSb.WriteString("The stream had ended.")
 	case stream.ReasonTimeout:
-		desc = "The stream did not come online in time."
+		descSb.WriteString("The stream did not come online in time.")
 	case stream.ReasonFulfilled:
-		desc = "Stream was catch successfully. Catch you on the next one!"
+		descSb.WriteString("Stream was catch successfully. Catch you on the next one!")
 	case stream.ReasonForceStopped:
 		if !s.Permanent {
-			desc = "The stream catch has been stopped by the user."
+			descSb.WriteString("The stream catch has been stopped by the user.")
 		} else {
-			desc = "The permanent stream catch has been stopped by the user."
+			descSb.WriteString("The permanent stream catch has been stopped by the user.")
 		}
 	case stream.ReasonErrored:
-		desc = "An error has occurred."
+		descSb.WriteString("An error has occurred.")
 	default:
-		desc = "The stream catch was stopped for unknown reason."
+		descSb.WriteString("The stream catch was stopped for unknown reason.")
 	}
 
-	recordLink, err := bot.GetPlaybackURL(s)
+	var recordLink string
+	var err error
+	switch *s.EndedReason {
+	case stream.ReasonStreamEnded:
+	case stream.ReasonFulfilled:
+	case stream.ReasonForceStopped:
+		recordLink, err = bot.GetPlaybackURL(s)
+	default:
+	}
 	if err != nil {
-		bot.sugar.Errorw("Could not get playback URL", "StreamId", s.Id, "error", err)
+		bot.sugar.Warnw("Could not get playback URL. This might not be an error.", "StreamId", s.Id, "error", err)
 	}
 
-	components := []discordgo.MessageComponent{
-		discordgo.Button{
+	var components []discordgo.MessageComponent
+	if recordLink != "" {
+		components = append(components, discordgo.Button{
 			Label: "Watch recorded stream",
 			Style: discordgo.LinkButton,
 			URL:   recordLink,
-		},
+		})
+		descSb.WriteString(fmt.Sprintf("\nYou can watch the recorded stream for the next 24 hours."))
 	}
 	if !s.Permanent {
 		components = append(components, discordgo.Button{
@@ -102,7 +113,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
-				Description: desc,
+				Description: descSb.String(),
 				Thumbnail: &discordgo.MessageEmbedThumbnail{
 					URL: s.ThumbnailUrl,
 				},
