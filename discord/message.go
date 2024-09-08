@@ -1,8 +1,12 @@
 package discord
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"io"
+	"net/http"
 	"streamcatch-bot/broadcaster/stream"
 	"time"
 )
@@ -11,6 +15,36 @@ type StreamMessageContent struct {
 	Content    string
 	Components []discordgo.MessageComponent
 	Embeds     []*discordgo.MessageEmbed
+}
+
+type PlaybackEntry struct {
+	Start    string  `json:"start"`
+	Duration float64 `json:"duration"`
+}
+
+func (bot *Bot) GetPlaybackURL(s *stream.Stream) (string, error) {
+	resp, err := http.Get(bot.mediaServerPlaybackUrl + "/list?path=" + string(s.Id))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New(fmt.Sprintf("could not get playback info for stream due to not ok; StatusCode: %d", resp.StatusCode))
+	}
+	var list []PlaybackEntry
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("could not read playback info: %w", err)
+	}
+	err = json.Unmarshal(bodyBytes, &list)
+	if err != nil {
+		return "", err
+	}
+
+	if len(list) == 0 {
+		return "", errors.New("list empty")
+	}
+	lastEntry := list[len(list)-1]
+	return fmt.Sprintf("%s/get?path=%s&start=%s&duration=%f&format=mp4", bot.mediaServerPlaybackUrlPublic, s.Id, lastEntry.Start, lastEntry.Duration), nil
 }
 
 func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
@@ -34,32 +68,33 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 		desc = "The stream catch was stopped for unknown reason."
 	}
 
-	var components []discordgo.MessageComponent
+	recordLink, err := bot.GetPlaybackURL(s)
+	if err != nil {
+		bot.sugar.Errorw("Could not get playback URL", "StreamId", s.Id, "error", err)
+	}
+
+	components := []discordgo.MessageComponent{
+		discordgo.Button{
+			Label: "Watch recorded stream",
+			Style: discordgo.LinkButton,
+			URL:   recordLink,
+		},
+	}
 	if !s.Permanent {
-		components = []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.Button{
-						Label:    "Re-catch",
-						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("recatch_%s", s.Url),
-					},
-				},
-			},
-		}
+		components = append(components, discordgo.Button{
+			Label:    "Re-catch",
+			Style:    discordgo.SecondaryButton,
+			CustomID: fmt.Sprintf("recatch_%s", s.Url),
+		})
 	} else {
 		if *s.EndedReason == stream.ReasonForceStopped {
-			components = []discordgo.MessageComponent{
-				discordgo.ActionsRow{
-					Components: []discordgo.MessageComponent{
-						discordgo.Button{
-							Label:    "Re-catch (Permanent)",
-							Style:    discordgo.SecondaryButton,
-							CustomID: fmt.Sprintf("permanent_recatch_%s", s.Url),
-						},
-					},
+			components = append(components,
+				discordgo.Button{
+					Label:    "Re-catch (Permanent)",
+					Style:    discordgo.SecondaryButton,
+					CustomID: fmt.Sprintf("permanent_recatch_%s", s.Url),
 				},
-			}
+			)
 		}
 	}
 
@@ -84,7 +119,11 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 				},
 			},
 		},
-		Components: components,
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: components,
+			},
+		},
 	}
 }
 

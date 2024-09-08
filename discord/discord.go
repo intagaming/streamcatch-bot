@@ -22,10 +22,12 @@ var (
 )
 
 type Bot struct {
-	sugar             *zap.SugaredLogger
-	session           *discordgo.Session
-	broadcaster       *broadcaster.Broadcaster
-	mediaServerHlsUrl string
+	sugar                        *zap.SugaredLogger
+	session                      *discordgo.Session
+	broadcaster                  *broadcaster.Broadcaster
+	mediaServerHlsUrl            string
+	mediaServerPlaybackUrl       string
+	mediaServerPlaybackUrlPublic string
 }
 
 func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
@@ -42,7 +44,24 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 		sugar.Panic("MEDIA_SERVER_HLS_URL is not set")
 	}
 
-	bot := Bot{sugar: sugar, session: session, broadcaster: bc, mediaServerHlsUrl: mediaServerHlsUrl}
+	mediaServerPlaybackUrl := os.Getenv("MEDIA_SERVER_PLAYBACK_URL")
+	if mediaServerPlaybackUrl == "" {
+		sugar.Panic("MEDIA_SERVER_PLAYBACK_URL is not set")
+	}
+
+	mediaServerPlaybackUrlPublic := os.Getenv("MEDIA_SERVER_PLAYBACK_URL_PUBLIC")
+	if mediaServerPlaybackUrlPublic == "" {
+		sugar.Panic("MEDIA_SERVER_PLAYBACK_URL_PUBLIC is not set")
+	}
+
+	bot := Bot{
+		sugar:                        sugar,
+		session:                      session,
+		broadcaster:                  bc,
+		mediaServerHlsUrl:            mediaServerHlsUrl,
+		mediaServerPlaybackUrl:       mediaServerPlaybackUrl,
+		mediaServerPlaybackUrlPublic: mediaServerPlaybackUrlPublic,
+	}
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		switch i.Type {
