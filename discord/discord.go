@@ -89,7 +89,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 						},
 					})
 					if err != nil {
-						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 					}
 					return
 				}
@@ -98,7 +98,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,
 				})
 				if err != nil {
-					bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 				}
 			case strings.HasPrefix(customID, "refresh_"):
 				streamId := stream.Id(strings.TrimPrefix(customID, "refresh_"))
@@ -117,7 +117,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 						},
 					})
 					if err != nil {
-						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 					}
 					return
 				}
@@ -135,7 +135,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 						},
 					})
 					if err != nil {
-						bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 					}
 					return
 				}
@@ -149,7 +149,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 					},
 				})
 				if err != nil {
-					bot.sugar.Errorw("could not update interaction", "err", err)
+					bot.sugar.Errorf("could not update interaction: %v", err)
 				}
 			case strings.HasPrefix(customID, "permanent_recatch_"):
 				streamUrl := strings.TrimPrefix(customID, "permanent_recatch_")
@@ -243,7 +243,7 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		Embeds:     &msg.Embeds,
 	})
 	if err != nil {
-		bot.sugar.Errorw("could not respond to interaction", "err", err)
+		bot.sugar.Errorf("could not respond to interaction: %v", err)
 	}
 }
 
@@ -266,7 +266,7 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 		},
 	})
 	if err != nil {
-		bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+		bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 	}
 }
 
@@ -298,7 +298,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 				},
 			})
 			if err != nil {
-				bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 			}
 			return
 		}
@@ -308,7 +308,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 		for streamId := range streams {
 			a, ok := bot.broadcaster.Agents()[streamId]
 			if !ok {
-				bot.sugar.Errorw("Cannot find agent from stream", "streamId", streamId)
+				bot.sugar.Errorf("Cannot find agent from stream %s", streamId)
 				continue
 			}
 			if !a.Stream.Permanent {
@@ -325,7 +325,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			},
 		})
 		if err != nil {
-			bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 		}
 	case "cancel-all-permanent":
 		var streams map[stream.Id]struct{}
@@ -344,14 +344,14 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 				},
 			})
 			if err != nil {
-				bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 			}
 			return
 		}
 		for streamId := range streams {
 			a, ok := bot.broadcaster.Agents()[streamId]
 			if !ok {
-				bot.sugar.Errorw("Cannot find agent from stream", "streamId", streamId)
+				bot.sugar.Errorf("Cannot find agent from stream %s", streamId)
 				continue
 			}
 			if !a.Stream.Permanent {
@@ -367,7 +367,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			},
 		})
 		if err != nil {
-			bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 		}
 	}
 }

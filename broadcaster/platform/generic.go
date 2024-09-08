@@ -46,7 +46,7 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 				sugar.Debugw("Retrying getting stream", "url", stream.Url)
 				continue
 			} else {
-				sugar.Errorw("Doesn't recognize the output from the streamlink stream checking command", "output", string(output))
+				sugar.Errorf("Doesn't recognize the output from the streamlink stream checking command: %s", string(output))
 				return nil, errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
 			}
 		}

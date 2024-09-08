@@ -41,7 +41,7 @@ func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
 			Embeds:     &msg.Embeds,
 		})
 		if err != nil {
-			sl.bot.sugar.Errorw("could not send status to discord", "err", err)
+			sl.bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
 	} else {
 		discordMsg, err := sl.bot.session.FollowupMessageCreate(sl.interaction, true, &discordgo.WebhookParams{
@@ -50,7 +50,7 @@ func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
 			Embeds:     msg.Embeds,
 		})
 		if err != nil {
-			sl.bot.sugar.Errorw("could not send status to discord", "err", err)
+			sl.bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
 		sl.message = discordMsg
 	}
