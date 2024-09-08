@@ -24,6 +24,7 @@ type Stream struct {
 	ThumbnailUrl   string
 	Permanent      bool
 	// Used for permanent stream handling. Only catch a stream once.
+	// Can be used to detect if the stream ever went online.
 	PlatformLastStreamId *string
 }
 
