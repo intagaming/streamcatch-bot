@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
-	"github.com/go-redsync/redsync/v4"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/nicklaw5/helix/v2"
-	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"os/exec"
 	"streamcatch-bot/broadcaster/bc_config"
@@ -40,8 +38,7 @@ type Config struct {
 	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, stream *stream.Stream) (*stream.Info, error)
-	Redis                         *redis.Client
-	Redsync                       *redsync.Redsync
+	SCRedisClient                 sc_redis.SCRedisClient
 }
 
 type Broadcaster struct {
@@ -148,7 +145,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 		return nil, err
 	}
 
-	mutex := sc_redis.StreamMutex(b.config.Redsync, id)
+	mutex := b.config.SCRedisClient.StreamMutex(id)
 	if err := mutex.Lock(); err != nil {
 		panic(err)
 	}

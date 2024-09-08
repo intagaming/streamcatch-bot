@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"os"
 	"streamcatch-bot/broadcaster"
@@ -26,7 +25,7 @@ var (
 )
 
 type Bot struct {
-	redis                        *redis.Client
+	scRedisClient                sc_redis.SCRedisClient
 	sugar                        *zap.SugaredLogger
 	session                      *discordgo.Session
 	broadcaster                  *broadcaster.Broadcaster
@@ -35,7 +34,7 @@ type Bot struct {
 	mediaServerPlaybackUrlPublic string
 }
 
-func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, rdb *redis.Client) *Bot {
+func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc_redis.SCRedisClient) *Bot {
 	botToken := os.Getenv("BOT_TOKEN")
 	appId := os.Getenv("APP_ID")
 
@@ -66,7 +65,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, rdb *redis.Clien
 		mediaServerHlsUrl:            mediaServerHlsUrl,
 		mediaServerPlaybackUrl:       mediaServerPlaybackUrl,
 		mediaServerPlaybackUrlPublic: mediaServerPlaybackUrlPublic,
-		redis:                        rdb,
+		scRedisClient:                scRedisClient,
 	}
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -197,20 +196,26 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 func (bot *Bot) ResumeStream(redisStream *sc_redis.RedisStream) {
 	ctx := context.Background()
 	var message *discordgo.Message
-	messageJson, err := bot.redis.Get(ctx, sc_redis.StreamDiscordMessageIdKey+redisStream.Id).Result()
+	messageJson, err := bot.scRedisClient.GetStreamMessage(ctx, redisStream.Id)
 	if err == nil {
 		err = json.Unmarshal([]byte(messageJson), &message)
 		if err != nil {
 			bot.sugar.Errorf("could not unmarshal message: %s, deleting stream", err)
-			sc_redis.CleanupStream(bot.redis, redisStream.Id)
+			err := bot.scRedisClient.CleanupStream(ctx, redisStream.Id)
+			if err != nil {
+				panic(err)
+			}
 			return
 		}
 	}
 	var authorId string
-	authorId, err = bot.redis.Get(ctx, sc_redis.StreamDiscordAuthorIdKey+redisStream.Id).Result()
+	authorId, err = bot.scRedisClient.GetStreamAuthorId(ctx, redisStream.Id)
 	if err != nil {
 		bot.sugar.Errorf("could not get stream author: %s, deleting stream", err)
-		sc_redis.CleanupStream(bot.redis, redisStream.Id)
+		err := bot.scRedisClient.CleanupStream(ctx, redisStream.Id)
+		if err != nil {
+			panic(err)
+		}
 		return
 	}
 
@@ -263,18 +268,29 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	}
 
 	author := interactionAuthor(i)
-	_, err = bot.redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HSet(ctx, sc_redis.StreamsKey, sc_redis.RedisStreamFromStream(s).Marshal(), 0)
-		pipe.Set(ctx, sc_redis.StreamDiscordAuthorIdKey+string(s.Id), author.ID, 0)
-		if i.Member != nil {
-			pipe.SAdd(ctx, sc_redis.GuildStreamsKey+i.GuildID, s.Id)
-			pipe.Set(ctx, sc_redis.StreamGuildKey+string(s.Id), i.GuildID, 0)
-		} else {
-			pipe.SAdd(ctx, sc_redis.UserStreamsKey+i.User.ID, s.Id)
-			pipe.Set(ctx, sc_redis.StreamUserKey+string(s.Id), i.User.ID, 0)
-		}
-		return nil
+	var userId string
+	if i.User != nil {
+		userId = i.User.ID
+	}
+	err = bot.scRedisClient.AddStream(ctx, &sc_redis.AddStreamData{
+		StreamId:   string(s.Id),
+		StreamJson: string(sc_redis.RedisStreamFromStream(s).Marshal()),
+		AuthorId:   author.ID,
+		GuildId:    i.GuildID,
+		UserId:     userId,
 	})
+	//_, err = bot.redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+	//	pipe.HSet(ctx, sc_redis.StreamsKey, sc_redis.RedisStreamFromStream(s).Marshal(), 0)
+	//	pipe.Set(ctx, sc_redis.StreamDiscordAuthorIdKey+string(s.Id), author.ID, 0)
+	//	if i.Member != nil {
+	//		pipe.SAdd(ctx, sc_redis.GuildStreamsKey+i.GuildID, s.Id)
+	//		pipe.Set(ctx, sc_redis.StreamGuildKey+string(s.Id), i.GuildID, 0)
+	//	} else {
+	//		pipe.SAdd(ctx, sc_redis.UserStreamsKey+i.User.ID, s.Id)
+	//		pipe.Set(ctx, sc_redis.StreamUserKey+string(s.Id), i.User.ID, 0)
+	//	}
+	//	return nil
+	//})
 	if err != nil {
 		panic(err)
 	}
@@ -315,7 +331,7 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 }
 
 func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, author *discordgo.User) bool {
-	streamAuthorId, err := bot.redis.Get(context.Background(), string(sc_redis.StreamDiscordAuthorIdKey+streamId)).Result()
+	streamAuthorId, err := bot.scRedisClient.GetStreamAuthorId(context.Background(), string(streamId))
 	if err != nil {
 		bot.sugar.Errorf("could not get stream author id: %v", err)
 		return false
@@ -335,13 +351,11 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 		var streams []string
 		ctx := context.Background()
 		var err error
-		var key string
 		if i.Member != nil {
-			key = sc_redis.GuildStreamsKey + i.GuildID
+			streams, err = bot.scRedisClient.GetGuildStreams(ctx, i.GuildID)
 		} else {
-			key = sc_redis.UserStreamsKey + i.User.ID
+			streams, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
 		}
-		streams, err = bot.redis.SMembers(ctx, key).Result()
 		if err != nil {
 			bot.sugar.Errorf("could not get stream list: %v", err)
 			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -396,13 +410,11 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 		var streams []string
 		ctx := context.Background()
 		var err error
-		var key string
 		if i.Member != nil {
-			key = sc_redis.GuildStreamsKey + i.GuildID
+			streams, err = bot.scRedisClient.GetGuildStreams(ctx, i.GuildID)
 		} else {
-			key = sc_redis.UserStreamsKey + i.User.ID
+			streams, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
 		}
-		streams, err = bot.redis.SMembers(ctx, key).Result()
 		if err != nil {
 			bot.sugar.Errorf("could not get stream list: %v", err)
 			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

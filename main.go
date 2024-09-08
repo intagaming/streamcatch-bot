@@ -118,6 +118,8 @@ func main() {
 	pool := goredis.NewPool(rdb)
 	rs := redsync.New(pool)
 
+	var scRedisClient sc_redis.SCRedisClient = sc_redis.RealSCRedisClient{Redis: rdb, Redsync: rs}
+
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
 		TwitchClientSecret:            twitchClientSecret,
@@ -159,16 +161,15 @@ func main() {
 				return &stream.Info{}, nil
 			}
 		},
-		Clock:   quartz.NewReal(),
-		Redis:   rdb,
-		Redsync: rs,
+		Clock:         quartz.NewReal(),
+		SCRedisClient: &scRedisClient,
 	})
 
-	bot := discord.New(sugar, bc, rdb)
+	bot := discord.New(sugar, bc, &scRedisClient)
 
 	// get streams from db and handle
 	ctx := context.Background()
-	streams, err := rdb.HGetAll(ctx, sc_redis.StreamsKey).Result()
+	streams, err := scRedisClient.GetStreams(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -178,7 +179,10 @@ func main() {
 		err := json.Unmarshal([]byte(streamJson), &s)
 		if err != nil {
 			sugar.Errorf("Could not handle stream %s, deleting", streamId)
-			sc_redis.CleanupStream(rdb, streamId)
+			err := scRedisClient.CleanupStream(ctx, streamId)
+			if err != nil {
+				panic(err)
+			}
 			continue
 		}
 

@@ -1,10 +1,10 @@
 package discord
 
 import (
+	"context"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/sc_redis"
 	"sync"
 )
 
@@ -75,25 +75,12 @@ func (sl *StreamListener) Close(s *stream.Stream) {
 
 	_, err := s.Mutex.Unlock()
 	if err != nil {
-		sl.bot.sugar.Errorf("could not release stream lock: %v", err)
+		//sl.bot.sugar.Errorf("could not release stream lock: %v", err)
+		panic(err)
 	}
 
-	sc_redis.CleanupStream(sl.bot.redis, string(s.Id))
-	// TODO: move this to cleanup function
-	delete(StreamAuthor, s.Id)
-	if _, ok := StreamGuild[s.Id]; ok {
-		guildId := StreamGuild[s.Id]
-		delete(StreamGuild, s.Id)
-		delete(GuildStreams[guildId], s.Id)
-		if len(GuildStreams[guildId]) == 0 {
-			delete(GuildStreams, guildId)
-		}
-	} else {
-		userId := StreamUser[s.Id]
-		delete(StreamUser, s.Id)
-		delete(UserStreams[userId], s.Id)
-		if len(UserStreams[userId]) == 0 {
-			delete(UserStreams, userId)
-		}
+	err = sl.bot.scRedisClient.CleanupStream(context.Background(), string(s.Id))
+	if err != nil {
+		panic(err)
 	}
 }
