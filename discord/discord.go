@@ -309,8 +309,13 @@ var commands = []*discordgo.ApplicationCommand{
 		Description: "Manage StreamCatch",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
+				Name:        "list-permanent",
+				Description: "List all permanent streams scheduled by you.",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+			},
+			{
 				Name:        "cancel-all-permanent",
-				Description: "Cancel all permanent streams scheduled.",
+				Description: "Cancel all permanent streams scheduled by you.",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 			},
 		},
@@ -349,6 +354,52 @@ func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, 
 func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 	switch options[0].Name {
+	case "list-permanent":
+		var streams map[stream.Id]struct{}
+		var ok bool
+		if i.Member != nil {
+			streams, ok = GuildStreams[i.GuildID]
+		} else {
+			streams, ok = UserStreams[i.User.ID]
+		}
+		if !ok || len(streams) == 0 {
+			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "No permanent streams found.",
+					Flags:   discordgo.MessageFlagsEphemeral,
+				},
+			})
+			if err != nil {
+				bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+			}
+			return
+		}
+
+		contentSb := strings.Builder{}
+		contentSb.Write([]byte("Here are permanent streams that you scheduled:\n"))
+		for streamId := range streams {
+			a, ok := bot.broadcaster.Agents()[streamId]
+			if !ok {
+				bot.sugar.Errorw("Cannot find agent from stream", "streamId", streamId)
+				continue
+			}
+			if !a.Stream.Permanent {
+				continue
+			}
+			contentSb.Write([]byte(fmt.Sprintf("- Stream ID: `%s`; URL: %s\n", streamId, a.Stream.Url)))
+		}
+
+		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: contentSb.String(),
+				Flags:   discordgo.MessageFlagsEphemeral | discordgo.MessageFlagsSuppressEmbeds,
+			},
+		})
+		if err != nil {
+			bot.sugar.Errorw("Failed to respond to interaction", "err", err)
+		}
 	case "cancel-all-permanent":
 		var streams map[stream.Id]struct{}
 		var ok bool
