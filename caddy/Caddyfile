@@ -1,7 +1,0 @@
-{$HLS_DOMAIN} {
-    reverse_proxy {$MEDIA_SERVER_HLS_URL}
-}
-
-{$PLAYBACK_DOMAIN} {
-    reverse_proxy {$MEDIA_SERVER_PLAYBACK_URL}
-}
