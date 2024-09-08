@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"io"
+	"streamcatch-bot/broadcaster/bc_config"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
@@ -223,7 +224,7 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
 		}
 
@@ -352,7 +353,7 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
 		}
 
@@ -422,7 +423,7 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
 		}
 
@@ -504,7 +505,7 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
 		}
 
@@ -593,7 +594,7 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
 		}
 		broadcaster.HandleStream(&s)
@@ -662,7 +663,7 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
 		}
 		agent := broadcaster.HandleStream(&s)

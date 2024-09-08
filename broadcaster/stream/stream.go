@@ -26,6 +26,12 @@ type Stream struct {
 	// Used for permanent stream handling. Only catch a stream once.
 	// Can be used to detect if the stream ever went online.
 	PlatformLastStreamId *string
+	Mutex                Mutex
+}
+
+type Mutex interface {
+	Lock() error
+	Unlock() (bool, error)
 }
 
 type Status int

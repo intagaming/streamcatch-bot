@@ -5,19 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
+	"github.com/go-redsync/redsync/v4"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/nicklaw5/helix/v2"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"os/exec"
+	"streamcatch-bot/broadcaster/bc_config"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/sc_redis"
 	"strings"
+	"sync"
 	"time"
-)
-
-const (
-	ScheduledEndDuration = 30 * time.Minute
 )
 
 var (
@@ -39,10 +40,13 @@ type Config struct {
 	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, stream *stream.Stream) (*stream.Info, error)
+	Redis                         *redis.Client
+	Redsync                       *redsync.Redsync
 }
 
 type Broadcaster struct {
-	sugar  *zap.SugaredLogger
+	sugar *zap.SugaredLogger
+	// TODO: persist this
 	agents map[stream.Id]*Agent
 	helix  *helix.Client
 	config *Config
@@ -71,19 +75,40 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	return &b
 }
 
+type LocalMutex struct {
+	mutex sync.Mutex
+}
+
+func (l *LocalMutex) Lock() error {
+	if l.mutex.TryLock() {
+		return nil
+	}
+	return errors.New("lock failed")
+}
+
+func (l *LocalMutex) Unlock() (bool, error) {
+	l.mutex.Unlock()
+	return true, nil
+}
+
 func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener, permanent bool) (*stream.Stream, error) {
 	id, err := gonanoid.New()
 	if err != nil {
 		return nil, err
+	}
+	mutex := &LocalMutex{}
+	if err := mutex.Lock(); err != nil {
+		panic(err)
 	}
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platform.Local,
 		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+		ScheduledEndAt: time.Now().Add(bc_config.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
+		Mutex:          mutex,
 	}
 
 	info, err := b.config.StreamerInfoFetcher(ctx, &s)
@@ -122,14 +147,21 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 	if err != nil {
 		return nil, err
 	}
+
+	mutex := sc_redis.StreamMutex(b.config.Redsync, id)
+	if err := mutex.Lock(); err != nil {
+		panic(err)
+	}
+
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platformName,
 		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+		ScheduledEndAt: time.Now().Add(bc_config.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
+		Mutex:          mutex,
 	}
 
 	info, err := b.config.StreamerInfoFetcher(ctx, &s)

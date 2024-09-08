@@ -2,26 +2,31 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"os"
 	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/sc_redis"
 	"strings"
 	"time"
 )
 
 var (
 	ExtendDuration = 10 * time.Minute
-	StreamAuthor   = make(map[stream.Id]*discordgo.User)
-	GuildStreams   = make(map[string]map[stream.Id]struct{})
-	StreamGuild    = make(map[stream.Id]string)
-	UserStreams    = make(map[string]map[stream.Id]struct{})
-	StreamUser     = make(map[stream.Id]string)
+	// TODO: move this to db
+	//StreamAuthor   = make(map[stream.Id]*discordgo.User)
+	//GuildStreams   = make(map[string]map[stream.Id]struct{})
+	//StreamGuild    = make(map[stream.Id]string)
+	//UserStreams    = make(map[string]map[stream.Id]struct{})
+	//StreamUser     = make(map[stream.Id]string)
 )
 
 type Bot struct {
+	redis                        *redis.Client
 	sugar                        *zap.SugaredLogger
 	session                      *discordgo.Session
 	broadcaster                  *broadcaster.Broadcaster
@@ -30,7 +35,7 @@ type Bot struct {
 	mediaServerPlaybackUrlPublic string
 }
 
-func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
+func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, rdb *redis.Client) *Bot {
 	botToken := os.Getenv("BOT_TOKEN")
 	appId := os.Getenv("APP_ID")
 
@@ -61,6 +66,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster) *Bot {
 		mediaServerHlsUrl:            mediaServerHlsUrl,
 		mediaServerPlaybackUrl:       mediaServerPlaybackUrl,
 		mediaServerPlaybackUrlPublic: mediaServerPlaybackUrlPublic,
+		redis:                        rdb,
 	}
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -188,6 +194,47 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 	}
 }
 
+func (bot *Bot) ResumeStream(redisStream *sc_redis.RedisStream) {
+	ctx := context.Background()
+	var message *discordgo.Message
+	messageJson, err := bot.redis.Get(ctx, sc_redis.StreamDiscordMessageIdKey+redisStream.Id).Result()
+	if err == nil {
+		err = json.Unmarshal([]byte(messageJson), &message)
+		if err != nil {
+			bot.sugar.Errorf("could not unmarshal message: %s, deleting stream", err)
+			sc_redis.CleanupStream(bot.redis, redisStream.Id)
+			return
+		}
+	}
+	var authorId string
+	authorId, err = bot.redis.Get(ctx, sc_redis.StreamDiscordAuthorIdKey+redisStream.Id).Result()
+	if err != nil {
+		bot.sugar.Errorf("could not get stream author: %s, deleting stream", err)
+		sc_redis.CleanupStream(bot.redis, redisStream.Id)
+		return
+	}
+
+	sl := StreamListener{
+		bot:      bot,
+		message:  message,
+		authorId: authorId,
+	}
+	s := stream.Stream{
+		Id:                   stream.Id(redisStream.Id),
+		Url:                  redisStream.Url,
+		Platform:             redisStream.Platform,
+		CreatedAt:            redisStream.CreatedAt,
+		ScheduledEndAt:       redisStream.ScheduledEndAt,
+		Status:               redisStream.Status,
+		Listener:             &sl,
+		ThumbnailUrl:         redisStream.ThumbnailUrl,
+		Permanent:            redisStream.Permanent,
+		PlatformLastStreamId: redisStream.PlatformLastStreamId,
+	}
+	bot.broadcaster.HandleStream(&s)
+	bot.sugar.Infof("Resumed stream %s", s.Id)
+}
+
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent bool) {
 	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
@@ -196,9 +243,13 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		bot.sugar.Errorf("could not respond to interaction: %s", err)
 	}
 
-	sl := bot.NewStreamListener(i)
+	sl := StreamListener{
+		bot:         bot,
+		interaction: i,
+		authorId:    interactionAuthor(i).ID,
+	}
 	ctx := context.Background()
-	s, err := bot.broadcaster.MakeStream(ctx, url, sl, permanent)
+	s, err := bot.broadcaster.MakeStream(ctx, url, &sl, permanent)
 	if err != nil {
 		bot.sugar.Errorf("could not create stream: %s", err)
 		content := "Failed to create stream."
@@ -212,20 +263,20 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	}
 
 	author := interactionAuthor(i)
-	StreamAuthor[s.Id] = author
-	if i.Member != nil {
-		if _, ok := GuildStreams[i.GuildID]; !ok {
-			GuildStreams[i.GuildID] = make(map[stream.Id]struct{})
+	_, err = bot.redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.HSet(ctx, sc_redis.StreamsKey, sc_redis.RedisStreamFromStream(s).Marshal(), 0)
+		pipe.Set(ctx, sc_redis.StreamDiscordAuthorIdKey+string(s.Id), author.ID, 0)
+		if i.Member != nil {
+			pipe.SAdd(ctx, sc_redis.GuildStreamsKey+i.GuildID, s.Id)
+			pipe.Set(ctx, sc_redis.StreamGuildKey+string(s.Id), i.GuildID, 0)
+		} else {
+			pipe.SAdd(ctx, sc_redis.UserStreamsKey+i.User.ID, s.Id)
+			pipe.Set(ctx, sc_redis.StreamUserKey+string(s.Id), i.User.ID, 0)
 		}
-		GuildStreams[i.GuildID][s.Id] = struct{}{}
-		StreamGuild[s.Id] = i.GuildID
-	} else {
-		if _, ok := UserStreams[i.User.ID]; !ok {
-			UserStreams[i.User.ID] = make(map[stream.Id]struct{})
-		}
-		UserStreams[i.User.ID][s.Id] = struct{}{}
-		StreamGuild[s.Id] = i.GuildID
-		StreamUser[s.Id] = i.User.ID
+		return nil
+	})
+	if err != nil {
+		panic(err)
 	}
 
 	bot.broadcaster.HandleStream(s)
@@ -264,7 +315,12 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 }
 
 func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, author *discordgo.User) bool {
-	if StreamAuthor[streamId].ID != author.ID {
+	streamAuthorId, err := bot.redis.Get(context.Background(), string(sc_redis.StreamDiscordAuthorIdKey+streamId)).Result()
+	if err != nil {
+		bot.sugar.Errorf("could not get stream author id: %v", err)
+		return false
+	}
+	if streamAuthorId != author.ID {
 		bot.SendUnauthorizedInteractionResponse(i)
 		return false
 	}
@@ -275,14 +331,31 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 	switch options[0].Name {
 	case "list-permanent":
-		var streams map[stream.Id]struct{}
-		var ok bool
+		// TODO: defer discord response
+		var streams []string
+		ctx := context.Background()
+		var err error
+		var key string
 		if i.Member != nil {
-			streams, ok = GuildStreams[i.GuildID]
+			key = sc_redis.GuildStreamsKey + i.GuildID
 		} else {
-			streams, ok = UserStreams[i.User.ID]
+			key = sc_redis.UserStreamsKey + i.User.ID
 		}
-		if !ok || len(streams) == 0 {
+		streams, err = bot.redis.SMembers(ctx, key).Result()
+		if err != nil {
+			bot.sugar.Errorf("could not get stream list: %v", err)
+			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "An error occurred.",
+				},
+			})
+			if err != nil {
+				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+			}
+			return
+		}
+		if len(streams) == 0 {
 			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -297,8 +370,8 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 
 		contentSb := strings.Builder{}
 		contentSb.Write([]byte("Here are permanent streams that you scheduled:\n"))
-		for streamId := range streams {
-			a, ok := bot.broadcaster.Agents()[streamId]
+		for _, streamId := range streams {
+			a, ok := bot.broadcaster.Agents()[stream.Id(streamId)]
 			if !ok {
 				bot.sugar.Errorf("Cannot find agent from stream %s", streamId)
 				continue
@@ -309,7 +382,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			contentSb.Write([]byte(fmt.Sprintf("- Stream ID: `%s`; URL: %s\n", streamId, a.Stream.Url)))
 		}
 
-		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: contentSb.String(),
@@ -320,14 +393,30 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 		}
 	case "cancel-all-permanent":
-		var streams map[stream.Id]struct{}
-		var ok bool
+		var streams []string
+		ctx := context.Background()
+		var err error
+		var key string
 		if i.Member != nil {
-			streams, ok = GuildStreams[i.GuildID]
+			key = sc_redis.GuildStreamsKey + i.GuildID
 		} else {
-			streams, ok = UserStreams[i.User.ID]
+			key = sc_redis.UserStreamsKey + i.User.ID
 		}
-		if !ok || len(streams) == 0 {
+		streams, err = bot.redis.SMembers(ctx, key).Result()
+		if err != nil {
+			bot.sugar.Errorf("could not get stream list: %v", err)
+			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "An error occurred.",
+				},
+			})
+			if err != nil {
+				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+			}
+			return
+		}
+		if len(streams) == 0 {
 			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -339,8 +428,9 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			}
 			return
 		}
-		for streamId := range streams {
-			a, ok := bot.broadcaster.Agents()[streamId]
+
+		for _, streamId := range streams {
+			a, ok := bot.broadcaster.Agents()[stream.Id(streamId)]
 			if !ok {
 				bot.sugar.Errorf("Cannot find agent from stream %s", streamId)
 				continue
@@ -350,7 +440,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			}
 			a.Close(stream.ReasonForceStopped, nil)
 		}
-		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: "All permanent streams have been stopped.",

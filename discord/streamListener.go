@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/sc_redis"
 	"sync"
 )
 
@@ -12,6 +13,7 @@ type StreamListener struct {
 	interaction  *discordgo.Interaction
 	message      *discordgo.Message
 	messageMutex sync.Mutex
+	authorId     string
 }
 
 func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
@@ -31,7 +33,7 @@ func (sl *StreamListener) UpdateStreamCatchMessage(s *stream.Stream) {
 		return
 	}
 
-	content := fmt.Sprintf("<@%s>", interactionAuthor(sl.interaction).ID) + msg.Content
+	content := fmt.Sprintf("<@%s>", sl.authorId) + msg.Content
 	if sl.message != nil {
 		_, err := sl.bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			ID:         sl.message.ID,
@@ -69,6 +71,15 @@ func (sl *StreamListener) Close(s *stream.Stream) {
 	if s.Permanent && s.Status != stream.StatusEnded {
 		return
 	}
+	// Stream closed completely. Cleanup.
+
+	_, err := s.Mutex.Unlock()
+	if err != nil {
+		sl.bot.sugar.Errorf("could not release stream lock: %v", err)
+	}
+
+	sc_redis.CleanupStream(sl.bot.redis, string(s.Id))
+	// TODO: move this to cleanup function
 	delete(StreamAuthor, s.Id)
 	if _, ok := StreamGuild[s.Id]; ok {
 		guildId := StreamGuild[s.Id]
@@ -85,8 +96,4 @@ func (sl *StreamListener) Close(s *stream.Stream) {
 			delete(UserStreams, userId)
 		}
 	}
-}
-
-func (bot *Bot) NewStreamListener(i *discordgo.Interaction) *StreamListener {
-	return &StreamListener{bot: bot, interaction: i}
 }

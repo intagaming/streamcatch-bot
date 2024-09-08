@@ -42,6 +42,10 @@ func (a *Agent) Broadcaster() *Broadcaster {
 func (a *Agent) Run() {
 	a.sugar.Debugw("Agent running", "streamId", a.Stream.Id, "permanent", a.Stream.Permanent)
 
+	// TODO: properly resume stream. For now, make it work like a new stream.
+	a.Stream.Status = stream.StatusWaiting
+	a.Stream.PlatformLastStreamId = nil
+
 	// This loop will be running only once if the stream is not permanent.
 	for {
 		a.HandleOneStreamInstance()

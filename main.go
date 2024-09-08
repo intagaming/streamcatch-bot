@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/coder/quartz"
+	"github.com/go-redsync/redsync/v4"
+	"github.com/go-redsync/redsync/v4/redis/goredis"
 	"github.com/nicklaw5/helix/v2"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"log"
 	"net/http"
@@ -18,6 +22,7 @@ import (
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
 	"streamcatch-bot/discord"
+	"streamcatch-bot/sc_redis"
 )
 
 var isDev bool
@@ -99,6 +104,20 @@ func main() {
 		sugar.Warn("TWITCH_AUTH_TOKEN is not set")
 	}
 
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		sugar.Warn("REDIS_ADDR is not set")
+	}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       0,
+	})
+	pool := goredis.NewPool(rdb)
+	rs := redsync.New(pool)
+
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
 		TwitchClientSecret:            twitchClientSecret,
@@ -140,10 +159,31 @@ func main() {
 				return &stream.Info{}, nil
 			}
 		},
-		Clock: quartz.NewReal(),
+		Clock:   quartz.NewReal(),
+		Redis:   rdb,
+		Redsync: rs,
 	})
 
-	bot := discord.New(sugar, bc)
+	bot := discord.New(sugar, bc, rdb)
+
+	// get streams from db and handle
+	ctx := context.Background()
+	streams, err := rdb.HGetAll(ctx, sc_redis.StreamsKey).Result()
+	if err != nil {
+		panic(err)
+	}
+	// TODO: continue polling for unhandled streams in db in case lock expires
+	for streamId, streamJson := range streams {
+		var s sc_redis.RedisStream
+		err := json.Unmarshal([]byte(streamJson), &s)
+		if err != nil {
+			sugar.Errorf("Could not handle stream %s, deleting", streamId)
+			sc_redis.CleanupStream(rdb, streamId)
+			continue
+		}
+
+		bot.ResumeStream(&s)
+	}
 
 	if isDev {
 		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
