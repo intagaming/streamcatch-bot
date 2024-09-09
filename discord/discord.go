@@ -125,7 +125,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 					}
 					return
 				}
-				newScheduledEndAt := time.Now().Add(ExtendDuration)
+				newScheduledEndAt := bot.broadcaster.Config.Clock.Now().Add(ExtendDuration)
 				if a.Stream.ScheduledEndAt.After(newScheduledEndAt) {
 					newScheduledEndAt = a.Stream.ScheduledEndAt
 				}

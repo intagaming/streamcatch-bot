@@ -59,7 +59,7 @@ func (a *Agent) HandleOneStreamInstance() {
 	a.sugar.Debugw("HandleOneStreamInstance being called", "streamId", a.Stream.Id)
 
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 
 	iterationCtx, cancelIterationCtx := context.WithCancel(a.ctx)
 	defer cancelIterationCtx()
@@ -83,7 +83,7 @@ func (a *Agent) HandleOneStreamInstance() {
 	}
 
 	// Wait for stream to come online based on the platform
-	platform, ok := b.config.StreamPlatforms[a.Stream.Platform]
+	platform, ok := b.Config.StreamPlatforms[a.Stream.Platform]
 	if !ok {
 		a.Close(stream.ReasonErrored, fmt.Errorf("unknown platform: %s", a.Stream.Platform))
 		return
@@ -198,9 +198,9 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 
 func (a *Agent) StreamPoller(ctx context.Context) {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	try := func() error {
-		available, err := b.config.StreamAvailableChecker(a.Stream.Id)
+		available, err := b.Config.StreamAvailableChecker(a.Stream.Id)
 		if err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ func (a *Agent) StreamPoller(ctx context.Context) {
 
 func (a *Agent) TimeoutChecker(ctx context.Context) {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	a.checkTimeout()
 
 	ticker := clock.NewTicker(20 * time.Second)
@@ -285,7 +285,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 
 func (a *Agent) startFfmpegStreamer(ctx context.Context, pipe *io.PipeReader) {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	streamerRetryTimer := clock.NewTimer(0)
 	go func() {
 		for {
@@ -329,7 +329,7 @@ func (a *Agent) startFfmpegStreamer(ctx context.Context, pipe *io.PipeReader) {
 
 func (a *Agent) checkTimeout() {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	if clock.Now().After(a.Stream.ScheduledEndAt) {
 		if a.Stream.Status == stream.StatusGoneLive {
 			a.sugar.Debugw("Agent fulfilled", "streamId", a.Stream.Id)

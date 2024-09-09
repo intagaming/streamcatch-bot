@@ -46,7 +46,7 @@ type Broadcaster struct {
 	// TODO: persist this
 	agents map[stream.Id]*Agent
 	helix  *helix.Client
-	config *Config
+	Config *Config
 }
 
 func (b *Broadcaster) Agents() map[stream.Id]*Agent {
@@ -54,11 +54,11 @@ func (b *Broadcaster) Agents() map[stream.Id]*Agent {
 }
 
 func (b *Broadcaster) MediaServerPublishUser() string {
-	return b.config.MediaServerPublishUser
+	return b.Config.MediaServerPublishUser
 }
 
 func (b *Broadcaster) MediaServerPublishPassword() string {
-	return b.config.MediaServerPublishPassword
+	return b.Config.MediaServerPublishPassword
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
@@ -66,7 +66,7 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 		sugar:  sugar,
 		agents: make(map[stream.Id]*Agent),
 		helix:  cfg.Helix,
-		config: cfg,
+		Config: cfg,
 	}
 
 	return &b
@@ -97,18 +97,19 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	if err := mutex.Lock(); err != nil {
 		panic(err)
 	}
+	clock := b.Config.Clock
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platform.Local,
-		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(bc_config.ScheduledEndDuration),
+		CreatedAt:      clock.Now(),
+		ScheduledEndAt: clock.Now().Add(bc_config.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
 		Mutex:          mutex,
 	}
 
-	info, err := b.config.StreamerInfoFetcher(ctx, &s)
+	info, err := b.Config.StreamerInfoFetcher(ctx, &s)
 	if err != nil {
 		return nil, err
 	}
@@ -145,23 +146,24 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 		return nil, err
 	}
 
-	mutex := b.config.SCRedisClient.StreamMutex(id)
+	mutex := b.Config.SCRedisClient.StreamMutex(id)
 	if err := mutex.Lock(); err != nil {
 		panic(err)
 	}
 
+	clock := b.Config.Clock
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platformName,
-		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(bc_config.ScheduledEndDuration),
+		CreatedAt:      clock.Now(),
+		ScheduledEndAt: clock.Now().Add(bc_config.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
 		Mutex:          mutex,
 	}
 
-	info, err := b.config.StreamerInfoFetcher(ctx, &s)
+	info, err := b.Config.StreamerInfoFetcher(ctx, &s)
 	if err != nil {
 		return nil, err
 	}
@@ -181,10 +183,10 @@ func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 		ctxCancel: cancel,
 		Stream:    s,
 		ffmpegCmder: func(ctx context.Context) FfmpegCmder {
-			return b.config.FfmpegCmderCreator(ctx, b.config, s.Id)
+			return b.Config.FfmpegCmderCreator(ctx, b.Config, s.Id)
 		},
 		dummyStreamFfmpegCmderCreator: func(ctx context.Context) FfmpegCmder {
-			return b.config.DummyStreamFfmpegCmderCreator(ctx, s.Url)
+			return b.Config.DummyStreamFfmpegCmderCreator(ctx, s.Url)
 		},
 	}
 
@@ -208,7 +210,7 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
 	a.Stream.ScheduledEndAt = newScheduledEndAt
-	err := sc_redis.PersistStream(b.config.SCRedisClient, a.Stream)
+	err := sc_redis.PersistStream(b.Config.SCRedisClient, a.Stream)
 	if err != nil {
 		return err
 	}
