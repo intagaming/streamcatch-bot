@@ -7,7 +7,7 @@ import (
 	"streamcatch-bot/broadcaster/stream"
 )
 
-type AddStreamData struct {
+type SetStreamData struct {
 	StreamId   string
 	StreamJson string
 	AuthorId   string
@@ -17,7 +17,9 @@ type AddStreamData struct {
 
 type SCRedisClient interface {
 	GetStreams(ctx context.Context) (map[string]string, error)
-	AddStream(ctx context.Context, data *AddStreamData) error
+	GetStream(ctx context.Context, streamId string) (string, error)
+	SetStream(ctx context.Context, data *SetStreamData) error
+	SetStreamJson(ctx context.Context, streamId string, streamJson string) error
 	CleanupStream(ctx context.Context, streamId string) error
 	StreamMutex(streamId string) stream.Mutex
 	GetStreamMessage(ctx context.Context, streamId string) (string, error)
@@ -33,12 +35,22 @@ type RealSCRedisClient struct {
 	Redsync *redsync.Redsync
 }
 
+func (r *RealSCRedisClient) SetStreamJson(ctx context.Context, streamId string, streamJson string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (r *RealSCRedisClient) GetStreams(ctx context.Context) (map[string]string, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *RealSCRedisClient) AddStream(ctx context.Context, data *AddStreamData) error {
+func (r *RealSCRedisClient) GetStream(ctx context.Context, streamId string) (string, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *RealSCRedisClient) SetStream(ctx context.Context, data *SetStreamData) error {
 	//TODO implement me
 	panic("implement me")
 }

@@ -223,6 +223,7 @@ func (a *Agent) StreamPoller(ctx context.Context) {
 			return nil
 		}
 		a.sugar.Debugw("StreamPoller: Done", "streamId", a.Stream.Id)
+		a.Stream.SCStreamStarted = true
 		a.Stream.Listener.StreamStarted(a.Stream)
 		tickerCancel()
 		return nil

@@ -9,6 +9,7 @@ import (
 	"os"
 	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/broadcaster/stream/streamListener"
 	"streamcatch-bot/sc_redis"
 	"strings"
 	"time"
@@ -219,10 +220,15 @@ func (bot *Bot) ResumeStream(redisStream *sc_redis.RedisStream) {
 		return
 	}
 
-	sl := StreamListener{
-		bot:      bot,
-		message:  message,
-		authorId: authorId,
+	sl := streamListener.StreamListener{
+		Sugar: bot.sugar,
+		DiscordUpdater: &RealDiscordUpdater{
+			bot:         bot,
+			interaction: nil,
+			message:     message,
+			authorId:    authorId,
+		},
+		SCRedisClient: bot.scRedisClient,
 	}
 	s := stream.Stream{
 		Id:                   stream.Id(redisStream.Id),
@@ -248,10 +254,15 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		bot.sugar.Errorf("could not respond to interaction: %s", err)
 	}
 
-	sl := StreamListener{
-		bot:         bot,
-		interaction: i,
-		authorId:    interactionAuthor(i).ID,
+	sl := streamListener.StreamListener{
+		Sugar: bot.sugar,
+		DiscordUpdater: &RealDiscordUpdater{
+			bot:         bot,
+			interaction: i,
+			message:     nil,
+			authorId:    interactionAuthor(i).ID,
+		},
+		SCRedisClient: bot.scRedisClient,
 	}
 	ctx := context.Background()
 	s, err := bot.broadcaster.MakeStream(ctx, url, &sl, permanent)
@@ -272,7 +283,7 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	if i.User != nil {
 		userId = i.User.ID
 	}
-	err = bot.scRedisClient.AddStream(ctx, &sc_redis.AddStreamData{
+	err = bot.scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
 		StreamId:   string(s.Id),
 		StreamJson: string(sc_redis.RedisStreamFromStream(s).Marshal()),
 		AuthorId:   author.ID,

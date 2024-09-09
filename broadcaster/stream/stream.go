@@ -12,17 +12,18 @@ import (
 type Id string
 
 type Stream struct {
-	Id             Id
-	Url            string
-	Platform       name.Name
-	CreatedAt      time.Time
-	ScheduledEndAt time.Time
-	Status         Status
-	EndedReason    *EndedReason
-	EndedError     error
-	Listener       StatusListener
-	ThumbnailUrl   string
-	Permanent      bool
+	Id              Id
+	Url             string
+	Platform        name.Name
+	CreatedAt       time.Time
+	ScheduledEndAt  time.Time
+	Status          Status
+	SCStreamStarted bool
+	EndedReason     *EndedReason
+	EndedError      error
+	Listener        StatusListener
+	ThumbnailUrl    string
+	Permanent       bool
 	// Used for permanent stream handling. Only catch a stream once.
 	// Can be used to detect if the stream ever went online.
 	PlatformLastStreamId *string
