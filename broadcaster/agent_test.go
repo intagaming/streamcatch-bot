@@ -23,27 +23,6 @@ import (
 	"time"
 )
 
-// TODO: use real StreamListener, but with stub config
-//
-//	type testListener struct {
-//		//status        stream.Status
-//		//closeReason   *stream.EndedReason
-//		//closeError    error
-//		//streamStarted bool
-//	}
-//
-//	func (tl *testListener) Status(stream *stream.Stream) {
-//		//tl.status = stream.Status
-//	}
-//
-//	func (tl *testListener) Close(stream *stream.Stream) {
-//		//tl.closeReason = stream.EndedReason
-//		//tl.closeError = stream.EndedError
-//	}
-//
-//	func (tl *testListener) StreamStarted(*stream.Stream) {
-//		//tl.streamStarted = true
-//	}
 type TestDiscordUpdater struct{}
 
 func (t *TestDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
@@ -135,7 +114,7 @@ func NewTestSCRedisClient() sc_redis.SCRedisClient {
 	return scRedisClient
 }
 
-func GetRedisStream(t assert.TestingT, scRedisClient sc_redis.SCRedisClient, streamId string) sc_redis.RedisStream {
+func GetRedisStream(t *testing.T, scRedisClient sc_redis.SCRedisClient, streamId string) sc_redis.RedisStream {
 	streamJson, err := scRedisClient.GetStream(context.Background(), streamId)
 	assert.Nil(t, err)
 	var redisStream sc_redis.RedisStream
@@ -144,7 +123,7 @@ func GetRedisStream(t assert.TestingT, scRedisClient sc_redis.SCRedisClient, str
 	return redisStream
 }
 
-func AssertRedisStreamPersisted(t assert.TestingT, scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
+func AssertRedisStreamPersisted(t *testing.T, scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
 	streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
 	assert.Nil(t, err)
 	assert.Equal(t, streamJson, string(sc_redis.RedisStreamFromStream(s).Marshal()))
@@ -1067,7 +1046,7 @@ func TestAgent(t *testing.T) {
 		streamPollerTrap := newStreamPollerTrap(mClock)
 		defer streamPollerTrap.Close()
 
-		broadcaster.HandleStream(&s)
+		a := broadcaster.HandleStream(&s)
 
 		waitForTrap(streamPollerTrap)
 
@@ -1093,33 +1072,112 @@ func TestAgent(t *testing.T) {
 
 		AssertRedisStreamPersisted(t, scRedisClient, &s)
 
-		// TODO: Test persist more status, PlatformLastStreamId
+		a.Close(stream.ReasonForceStopped, nil)
 
-		// expect ffmpegCmder to receive stream data from Streamer
-		//var streamReadErr error
-		//ffmpegCmderIn = make([]byte, len(streamerData))
-		//isRead := false
-		//go func() {
-		//	_, streamReadErr = ffmpegCmder.stdin.Read(ffmpegCmderIn)
-		//	isRead = true
-		//}()
-		//advanceUntilCond(mClock, func() bool {
-		//	return isRead
-		//}, 30*time.Second)
-		//
-		//if streamReadErr != nil {
-		//	t.Fatalf("Failed to read stdin ffmpeg cmder: %v", streamReadErr)
-		//}
-		//
-		//assert.Equal(t, streamerData, ffmpegCmderIn)
-		//
-		//assert.NotEqual(t, s.Status, stream.StatusEnded)
-		//
-		//advanceUntilCond(mClock, func() bool {
-		//	return s.Status == stream.StatusEnded
-		//}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
-		//
-		//assert.NotNil(t, listener.closeReason)
-		//assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusEnded
+		}, 5*time.Second)
+
+		streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
+		assert.Nil(t, err)
+		assert.Empty(t, streamJson)
+	})
+
+	t.Run("PermanentStreamPersistedCorrectly", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		var ffmpegCmder *testFfmpegCmder
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+		streamGoneOnlineChan := make(chan struct{}, 1)
+		streamGoneOnlineId := "stream1"
+
+		scRedisClient := NewTestSCRedisClient()
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
+				ffmpegCmder = &testFfmpegCmder{
+					ctx: ctx,
+				}
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
+				if GetRedisStream(t, scRedisClient, string(streamId)).Status == stream.StatusGoneLive {
+					return true, nil
+				}
+				return false, nil
+			},
+			StreamPlatforms: map[name.Name]stream.Platform{
+				platform.Twitch: &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+						<-streamGoneOnlineChan
+						return &name.WaitForOnlineData{StreamId: streamGoneOnlineId}, nil
+					},
+					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					},
+				},
+			},
+			Clock: mClock,
+		})
+		listener := streamListener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
+
+		s := stream.Stream{
+			Id:             "test",
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: time.Time{},
+			Listener:       &listener,
+			Mutex:          &sc_redis_test.TestMutex{},
+			Permanent:      true,
+		}
+
+		setupTestStream(scRedisClient, &s)
+
+		broadcaster.HandleStream(&s)
+
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.SCStreamStarted
+		}, 5*time.Second)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusWaiting
+		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		advance(mClock, time.Minute)
+
+		streamGoneOnlineId = "stream2"
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.SCStreamStarted
+		}, 5*time.Second)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
 	})
 }
