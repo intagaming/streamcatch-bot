@@ -208,5 +208,9 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
 	a.Stream.ScheduledEndAt = newScheduledEndAt
+	err := sc_redis.PersistStream(b.config.SCRedisClient, a.Stream)
+	if err != nil {
+		return err
+	}
 	return nil
 }

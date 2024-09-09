@@ -13,15 +13,11 @@ type StreamListener struct {
 	SCRedisClient  sc_redis.SCRedisClient
 }
 
-func (sl *StreamListener) PersistStream(s *stream.Stream) {
-	err := sl.SCRedisClient.SetStreamJson(context.Background(), string(s.Id), string(sc_redis.RedisStreamFromStream(s).Marshal()))
+func (sl *StreamListener) Status(s *stream.Stream) {
+	err := sc_redis.PersistStream(sl.SCRedisClient, s)
 	if err != nil {
 		sl.Sugar.Errorf("Error setting stream: %v", err)
 	}
-}
-
-func (sl *StreamListener) Status(s *stream.Stream) {
-	sl.PersistStream(s)
 	sl.DiscordUpdater.UpdateStreamCatchMessage(s)
 }
 

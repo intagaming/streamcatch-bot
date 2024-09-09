@@ -144,6 +144,12 @@ func GetRedisStream(t assert.TestingT, scRedisClient sc_redis.SCRedisClient, str
 	return redisStream
 }
 
+func AssertRedisStreamPersisted(t assert.TestingT, scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
+	streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
+	assert.Nil(t, err)
+	assert.Equal(t, streamJson, string(sc_redis.RedisStreamFromStream(s).Marshal()))
+}
+
 func setupTestStream(scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
 	err := s.Mutex.Lock()
 	if err != nil {
@@ -1074,23 +1080,20 @@ func TestAgent(t *testing.T) {
 			return s.SCStreamStarted
 		}, 5*time.Second)
 
-		// expect StreamCatch gone online ok
-		assert.NotEqual(t, s.Status, stream.StatusGoneLive)
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return s.Status == stream.StatusGoneLive
+			return GetRedisStream(t, scRedisClient, string(s.Id)).Status == stream.StatusGoneLive
 		}, 5*time.Second)
 
-		streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
+		err := broadcaster.RefreshAgent(s.Id, s.ScheduledEndAt.Add(time.Hour))
 		assert.Nil(t, err)
-		var redisStream sc_redis.RedisStream
-		err = json.Unmarshal([]byte(streamJson), &redisStream)
-		assert.Nil(t, err)
-		assert.Equal(t, stream.StatusGoneLive, redisStream.Status)
 
-		// TODO: Test persist scheduledEndAt, more status, PlatformLastStreamId
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		// TODO: Test persist more status, PlatformLastStreamId
 
 		// expect ffmpegCmder to receive stream data from Streamer
 		//var streamReadErr error

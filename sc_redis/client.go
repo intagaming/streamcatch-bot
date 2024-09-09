@@ -117,3 +117,7 @@ func (r *RealSCRedisClient) GetUserStreams(ctx context.Context, userId string) (
 //	})
 //	return err
 //}
+
+func PersistStream(scRedisClient SCRedisClient, s *stream.Stream) error {
+	return scRedisClient.SetStreamJson(context.Background(), string(s.Id), string(RedisStreamFromStream(s).Marshal()))
+}
