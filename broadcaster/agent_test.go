@@ -25,7 +25,7 @@ import (
 
 type TestDiscordUpdater struct{}
 
-func (t *TestDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
+func (t *TestDiscordUpdater) UpdateStreamCatchMessage(*stream.Stream) {
 }
 
 type testFfmpegCmder struct {
