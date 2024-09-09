@@ -23,7 +23,7 @@ func SetLocalOnline(streamerId stream.Id) {
 
 type LocalStreamPlatform struct{}
 
-func (l *LocalStreamPlatform) WaitForOnline(_ *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+func (l *LocalStreamPlatform) WaitForOnline(_ *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -31,9 +31,9 @@ func (l *LocalStreamPlatform) WaitForOnline(_ *zap.SugaredLogger, ctx context.Co
 		case <-ctx.Done():
 			return nil, contextCancelledErr
 		case <-ticker.C:
-			if _, ok := localOnlineMap[stream.Id]; ok {
+			if _, ok := localOnlineMap[s.Id]; ok {
 				select {
-				case <-localOnlineMap[stream.Id]:
+				case <-localOnlineMap[s.Id]:
 					streamId, err := gonanoid.New()
 					if err != nil {
 						panic(err)

@@ -24,7 +24,7 @@ type GenericStreamlinkInfo struct {
 	} `json:"metadata"`
 }
 
-func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 	var streamlinkInfo GenericStreamlinkInfo
 
 	ticker := time.NewTicker(3 * time.Second)
@@ -34,16 +34,16 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 		case <-ctx.Done():
 			return nil, contextCancelledErr
 		case <-ticker.C:
-			statusCheckCmd := exec.CommandContext(ctx, "streamlink", stream.Url, "-j")
+			statusCheckCmd := exec.CommandContext(ctx, "streamlink", s.Url, "-j")
 			output, _ := statusCheckCmd.CombinedOutput()
 			if strings.Contains(string(output), `"plugin": "`) {
 				if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
 					sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
 				}
-				sugar.Debugw("Detected stream live", "url", stream.Url)
+				sugar.Debugw("Detected stream live", "url", s.Url)
 				return &name.WaitForOnlineData{StreamId: streamlinkInfo.Metadata.Id}, nil
 			} else if strings.Contains(string(output), `No playable streams`) {
-				sugar.Debugw("Retrying getting stream", "url", stream.Url)
+				sugar.Debugw("Retrying getting stream", "url", s.Url)
 				continue
 			} else {
 				sugar.Errorf("Doesn't recognize the output from the streamlink stream checking command: %s", string(output))
@@ -54,9 +54,9 @@ func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx cont
 
 }
 
-func (g *GenericStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+func (g *GenericStreamPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 	return Stream(ctx,
-		[]string{"streamlink", stream.Url, "480p,360p", "--loglevel", "warning", "--stdout"},
+		[]string{"streamlink", s.Url, "480p,360p", "--loglevel", "warning", "--stdout"},
 		[]string{
 			"ffmpeg", "-hide_banner", "-loglevel", "error",
 			"-re", "-i", "pipe:", "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "-",

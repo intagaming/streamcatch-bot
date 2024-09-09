@@ -88,16 +88,16 @@ func (t *testDummyStreamFfmpegCmder) Wait() error {
 }
 
 type TestTwitchPlatform struct {
-	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error)
-	stream        func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
+	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error)
+	stream        func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }
 
-func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
-	return t.waitForOnline(sugar, ctx, stream)
+func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+	return t.waitForOnline(sugar, ctx, s)
 }
 
-func (t *TestTwitchPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
-	return t.stream(ctx, stream, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
+func (t *TestTwitchPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+	return t.stream(ctx, s, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
 }
 
 func NewTestSCRedisClient() sc_redis.SCRedisClient {
@@ -233,11 +233,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						if streamerRetryUntilSuccess > 0 {
 							streamerRetryUntilSuccess -= 1
 							return errors.New("stream not available")
@@ -383,11 +383,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
 						return &name.WaitForOnlineData{}, errors.New("should not go here")
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
 					},
 				},
@@ -456,12 +456,12 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
 						if streamerCalledTime <= 1 {
 							<-streamerEndChan
@@ -549,11 +549,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
 						<-streamerEndChan
 						return nil
@@ -648,11 +648,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
 					},
 				},
@@ -726,11 +726,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
 					},
 				},
@@ -794,11 +794,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{StreamId: streamGoneOnlineId}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						_, err := pipeWrite.Write(streamerData)
 						if err != nil {
 							return fmt.Errorf("unexpected streamer write error: %w", err)
@@ -940,11 +940,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
 						return &name.WaitForOnlineData{}, errors.New("should not go here")
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
 					},
 				},
@@ -1008,11 +1008,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						select {
 						case <-ctx.Done():
 							return ctx.Err()
@@ -1112,11 +1112,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{StreamId: streamGoneOnlineId}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						select {
 						case <-ctx.Done():
 							return ctx.Err()

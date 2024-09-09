@@ -37,7 +37,7 @@ type Config struct {
 	Helix                         *helix.Client
 	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
-	StreamerInfoFetcher           func(ctx context.Context, stream *stream.Stream) (*stream.Info, error)
+	StreamerInfoFetcher           func(ctx context.Context, s *stream.Stream) (*stream.Info, error)
 	SCRedisClient                 sc_redis.SCRedisClient
 }
 

@@ -141,8 +141,8 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	}
 }
 
-func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageContent {
-	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, stream.Id)
+func (bot *Bot) MakeStreamStartedMessage(s *stream.Stream) *StreamMessageContent {
+	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, s.Id)
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
@@ -150,7 +150,7 @@ func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageCo
 				Description: "Ready to catch! Join now.",
 				URL:         link,
 				Thumbnail: &discordgo.MessageEmbedThumbnail{
-					URL: stream.ThumbnailUrl,
+					URL: s.ThumbnailUrl,
 				},
 				Fields: []*discordgo.MessageEmbedField{
 					{
@@ -159,12 +159,12 @@ func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageCo
 					},
 					{
 						Name:   "Stream URL",
-						Value:  stream.Url,
+						Value:  s.Url,
 						Inline: true,
 					},
 					{
 						Name:   "Catch until",
-						Value:  stream.ScheduledEndAt.UTC().Format(time.RFC1123),
+						Value:  s.ScheduledEndAt.UTC().Format(time.RFC1123),
 						Inline: true,
 					},
 				},
@@ -181,12 +181,12 @@ func (bot *Bot) MakeStreamStartedMessage(stream *stream.Stream) *StreamMessageCo
 					discordgo.Button{
 						Label:    "Refresh",
 						Style:    discordgo.SecondaryButton,
-						CustomID: fmt.Sprintf("refresh_%s", stream.Id),
+						CustomID: fmt.Sprintf("refresh_%s", s.Id),
 					},
 					discordgo.Button{
 						Label:    "Stop",
 						Style:    discordgo.DangerButton,
-						CustomID: fmt.Sprintf("stop_%s", stream.Id),
+						CustomID: fmt.Sprintf("stop_%s", s.Id),
 					},
 				},
 			},
