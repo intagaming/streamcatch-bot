@@ -194,6 +194,7 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 	}
 }
 
+// TODO: move this elsewhere, not in discord
 func (bot *Bot) ResumeStream(redisStream *sc_redis.RedisStream) {
 	ctx := context.Background()
 	var message *discordgo.Message
