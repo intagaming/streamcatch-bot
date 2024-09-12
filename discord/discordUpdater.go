@@ -8,51 +8,51 @@ import (
 )
 
 type RealDiscordUpdater struct {
-	bot          *Bot
-	interaction  *discordgo.Interaction
-	message      *discordgo.Message
-	messageMutex sync.Mutex
-	authorId     string
+	Bot          *Bot
+	Interaction  *discordgo.Interaction
+	Message      *discordgo.Message
+	MessageMutex sync.Mutex
+	AuthorId     string
 }
 
 func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
-	r.messageMutex.Lock()
-	defer r.messageMutex.Unlock()
+	r.MessageMutex.Lock()
+	defer r.MessageMutex.Unlock()
 
 	var msg *StreamMessageContent
 	switch s.Status {
 	case stream.StatusWaiting:
-		msg = r.bot.MakeStreamStartedMessage(s)
+		msg = r.Bot.MakeStreamStartedMessage(s)
 	case stream.StatusGoneLive:
-		msg = r.bot.MakeStreamGoneLiveMessage(s)
+		msg = r.Bot.MakeStreamGoneLiveMessage(s)
 	case stream.StatusEnded:
-		msg = r.bot.MakeStreamEndedMessage(s)
+		msg = r.Bot.MakeStreamEndedMessage(s)
 	default:
-		r.bot.sugar.Fatalf("Unknown stream status: %d", s.Status)
+		r.Bot.sugar.Fatalf("Unknown stream status: %d", s.Status)
 		return
 	}
 
-	content := fmt.Sprintf("<@%s>", r.authorId) + msg.Content
-	if r.message != nil {
-		_, err := r.bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
-			ID:         r.message.ID,
-			Channel:    r.message.ChannelID,
+	content := fmt.Sprintf("<@%s>", r.AuthorId) + msg.Content
+	if r.Message != nil {
+		_, err := r.Bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
+			ID:         r.Message.ID,
+			Channel:    r.Message.ChannelID,
 			Content:    &content,
 			Components: &msg.Components,
 			Embeds:     &msg.Embeds,
 		})
 		if err != nil {
-			r.bot.sugar.Errorf("could not send status to discord: %v", err)
+			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
 	} else {
-		discordMsg, err := r.bot.session.FollowupMessageCreate(r.interaction, true, &discordgo.WebhookParams{
+		discordMsg, err := r.Bot.session.FollowupMessageCreate(r.Interaction, true, &discordgo.WebhookParams{
 			Content:    content,
 			Components: msg.Components,
 			Embeds:     msg.Embeds,
 		})
 		if err != nil {
-			r.bot.sugar.Errorf("could not send status to discord: %v", err)
+			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
-		r.message = discordMsg
+		r.Message = discordMsg
 	}
 }

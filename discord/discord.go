@@ -2,7 +2,6 @@ package discord
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
@@ -194,59 +193,6 @@ func (bot *Bot) EditMessage(channelId string, messageId string, message string) 
 	}
 }
 
-// TODO: move this elsewhere, not in discord
-func (bot *Bot) ResumeStream(redisStream *sc_redis.RedisStream) {
-	ctx := context.Background()
-	var message *discordgo.Message
-	messageJson, err := bot.scRedisClient.GetStreamMessage(ctx, redisStream.Id)
-	if err == nil {
-		err = json.Unmarshal([]byte(messageJson), &message)
-		if err != nil {
-			bot.sugar.Errorf("could not unmarshal message: %s, deleting stream", err)
-			err := bot.scRedisClient.CleanupStream(ctx, redisStream.Id)
-			if err != nil {
-				panic(err)
-			}
-			return
-		}
-	}
-	var authorId string
-	authorId, err = bot.scRedisClient.GetStreamAuthorId(ctx, redisStream.Id)
-	if err != nil {
-		bot.sugar.Errorf("could not get stream author: %s, deleting stream", err)
-		err := bot.scRedisClient.CleanupStream(ctx, redisStream.Id)
-		if err != nil {
-			panic(err)
-		}
-		return
-	}
-
-	sl := streamListener.StreamListener{
-		Sugar: bot.sugar,
-		DiscordUpdater: &RealDiscordUpdater{
-			bot:         bot,
-			interaction: nil,
-			message:     message,
-			authorId:    authorId,
-		},
-		SCRedisClient: bot.scRedisClient,
-	}
-	s := stream.Stream{
-		Id:                   stream.Id(redisStream.Id),
-		Url:                  redisStream.Url,
-		Platform:             redisStream.Platform,
-		CreatedAt:            redisStream.CreatedAt,
-		ScheduledEndAt:       redisStream.ScheduledEndAt,
-		Status:               redisStream.Status,
-		Listener:             &sl,
-		ThumbnailUrl:         redisStream.ThumbnailUrl,
-		Permanent:            redisStream.Permanent,
-		PlatformLastStreamId: redisStream.PlatformLastStreamId,
-	}
-	bot.broadcaster.HandleStream(&s)
-	bot.sugar.Infof("Resumed stream %s", s.Id)
-}
-
 func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent bool) {
 	err := bot.session.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
@@ -258,10 +204,10 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	sl := streamListener.StreamListener{
 		Sugar: bot.sugar,
 		DiscordUpdater: &RealDiscordUpdater{
-			bot:         bot,
-			interaction: i,
-			message:     nil,
-			authorId:    interactionAuthor(i).ID,
+			Bot:         bot,
+			Interaction: i,
+			Message:     nil,
+			AuthorId:    interactionAuthor(i).ID,
 		},
 		SCRedisClient: bot.scRedisClient,
 	}

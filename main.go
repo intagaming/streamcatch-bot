@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/bwmarrin/discordgo"
 	"github.com/coder/quartz"
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
@@ -186,7 +187,36 @@ func main() {
 			continue
 		}
 
-		bot.ResumeStream(&s)
+		var message *discordgo.Message
+		messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
+		if err == nil {
+			err = json.Unmarshal([]byte(messageJson), &message)
+			if err != nil {
+				sugar.Errorf("could not unmarshal message: %s, deleting stream", err)
+				err := scRedisClient.CleanupStream(ctx, s.Id)
+				if err != nil {
+					panic(err)
+				}
+				return
+			}
+		}
+		var authorId string
+		authorId, err = scRedisClient.GetStreamAuthorId(ctx, s.Id)
+		if err != nil {
+			sugar.Errorf("could not get stream author: %s, deleting stream", err)
+			err := scRedisClient.CleanupStream(ctx, s.Id)
+			if err != nil {
+				panic(err)
+			}
+			return
+		}
+
+		bc.ResumeStream(&s, &discord.RealDiscordUpdater{
+			Bot:         bot,
+			Interaction: nil,
+			Message:     message,
+			AuthorId:    authorId,
+		})
 	}
 
 	if isDev {

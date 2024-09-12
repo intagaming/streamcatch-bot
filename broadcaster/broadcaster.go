@@ -13,9 +13,9 @@ import (
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/broadcaster/stream/streamListener"
 	"streamcatch-bot/sc_redis"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -70,22 +70,6 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 	}
 
 	return &b
-}
-
-type LocalMutex struct {
-	mutex sync.Mutex
-}
-
-func (l *LocalMutex) Lock() error {
-	if l.mutex.TryLock() {
-		return nil
-	}
-	return errors.New("lock failed")
-}
-
-func (l *LocalMutex) Unlock() (bool, error) {
-	l.mutex.Unlock()
-	return true, nil
 }
 
 func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener stream.StatusListener, permanent bool) (*stream.Stream, error) {
@@ -215,4 +199,26 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 		return err
 	}
 	return nil
+}
+
+func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpdater streamListener.DiscordUpdater) {
+	sl := streamListener.StreamListener{
+		Sugar:          b.sugar,
+		DiscordUpdater: discordUpdater,
+		SCRedisClient:  b.Config.SCRedisClient,
+	}
+	s := stream.Stream{
+		Id:                   stream.Id(redisStream.Id),
+		Url:                  redisStream.Url,
+		Platform:             redisStream.Platform,
+		CreatedAt:            redisStream.CreatedAt,
+		ScheduledEndAt:       redisStream.ScheduledEndAt,
+		Status:               redisStream.Status,
+		Listener:             &sl,
+		ThumbnailUrl:         redisStream.ThumbnailUrl,
+		Permanent:            redisStream.Permanent,
+		PlatformLastStreamId: redisStream.PlatformLastStreamId,
+	}
+	b.HandleStream(&s)
+	b.sugar.Infof("Resumed stream %s", s.Id)
 }
