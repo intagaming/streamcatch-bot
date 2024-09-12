@@ -2,6 +2,7 @@ package broadcaster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
@@ -221,4 +222,45 @@ func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpd
 	}
 	b.HandleStream(&s)
 	b.sugar.Infof("Resumed stream %s", s.Id)
+}
+
+func (b *Broadcaster) ResumeStreams(discordUpdaterCreator func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error)) {
+	scRedisClient := b.Config.SCRedisClient
+	ctx := context.Background()
+	streams, err := scRedisClient.GetStreams(ctx)
+	if err != nil {
+		panic(err)
+	}
+	// TODO: continue polling for unhandled streams in db in case lock expires
+	for streamId, streamJson := range streams {
+		// Obtain right to handle stream
+		mutex := scRedisClient.StreamMutex(streamId)
+		err := mutex.Lock()
+		if err != nil {
+			b.sugar.Debugw("Stream locked, not handling", "streamId", streamId)
+			continue
+		}
+
+		var s sc_redis.RedisStream
+		err = json.Unmarshal([]byte(streamJson), &s)
+		if err != nil {
+			b.sugar.Errorf("Could not unmarshal stream %s, deleting", streamId)
+			err := scRedisClient.CleanupStream(ctx, streamId)
+			if err != nil {
+				panic(err)
+			}
+			continue
+		}
+
+		discordUpdater, err := discordUpdaterCreator(&s)
+		if err != nil {
+			b.sugar.Errorf("Could not create discord updater for stream %s, deleting", streamId)
+			err := scRedisClient.CleanupStream(ctx, streamId)
+			if err != nil {
+				panic(err)
+			}
+			continue
+		}
+		b.ResumeStream(&s, discordUpdater)
+	}
 }

@@ -22,6 +22,7 @@ import (
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/broadcaster/stream/streamListener"
 	"streamcatch-bot/discord"
 	"streamcatch-bot/sc_redis"
 )
@@ -169,55 +170,29 @@ func main() {
 	bot := discord.New(sugar, bc, scRedisClient)
 
 	// get streams from db and handle
-	ctx := context.Background()
-	streams, err := scRedisClient.GetStreams(ctx)
-	if err != nil {
-		panic(err)
-	}
-	// TODO: continue polling for unhandled streams in db in case lock expires
-	for streamId, streamJson := range streams {
-		var s sc_redis.RedisStream
-		err := json.Unmarshal([]byte(streamJson), &s)
-		if err != nil {
-			sugar.Errorf("Could not handle stream %s, deleting", streamId)
-			err := scRedisClient.CleanupStream(ctx, streamId)
-			if err != nil {
-				panic(err)
-			}
-			continue
-		}
-
+	bc.ResumeStreams(func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+		ctx := context.Background()
 		var message *discordgo.Message
 		messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
 		if err == nil {
 			err = json.Unmarshal([]byte(messageJson), &message)
 			if err != nil {
-				sugar.Errorf("could not unmarshal message: %s, deleting stream", err)
-				err := scRedisClient.CleanupStream(ctx, s.Id)
-				if err != nil {
-					panic(err)
-				}
-				return
+				return nil, err
 			}
 		}
 		var authorId string
 		authorId, err = scRedisClient.GetStreamAuthorId(ctx, s.Id)
 		if err != nil {
-			sugar.Errorf("could not get stream author: %s, deleting stream", err)
-			err := scRedisClient.CleanupStream(ctx, s.Id)
-			if err != nil {
-				panic(err)
-			}
-			return
+			return nil, err
 		}
 
-		bc.ResumeStream(&s, &discord.RealDiscordUpdater{
+		return &discord.RealDiscordUpdater{
 			Bot:         bot,
 			Interaction: nil,
 			Message:     message,
 			AuthorId:    authorId,
-		})
-	}
+		}, nil
+	})
 
 	if isDev {
 		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
