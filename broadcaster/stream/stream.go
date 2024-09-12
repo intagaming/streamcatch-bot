@@ -33,6 +33,8 @@ type Stream struct {
 type Mutex interface {
 	Lock() error
 	Unlock() (bool, error)
+	Extend() (bool, error)
+	Until() time.Time
 }
 
 type Status int

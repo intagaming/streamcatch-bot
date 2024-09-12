@@ -61,8 +61,7 @@ func (r *RealSCRedisClient) CleanupStream(ctx context.Context, streamId string) 
 }
 
 func (r *RealSCRedisClient) StreamMutex(streamId string) stream.Mutex {
-	//TODO implement me
-	panic("implement me")
+	return r.Redsync.NewMutex(StreamLockKey + streamId)
 }
 
 func (r *RealSCRedisClient) GetStreamMessage(ctx context.Context, streamId string) (string, error) {

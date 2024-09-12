@@ -3,9 +3,11 @@ package sc_redis
 import (
 	"context"
 	"errors"
+	"github.com/coder/quartz"
 	"streamcatch-bot/broadcaster/stream"
 	"streamcatch-bot/sc_redis"
 	"sync"
+	"time"
 )
 
 type TestSCRedisClient struct {
@@ -120,17 +122,33 @@ func (t *TestSCRedisClient) GetUserStreams(_ context.Context, userId string) ([]
 }
 
 type TestMutex struct {
+	clock quartz.Clock
 	mutex sync.Mutex
+	until time.Time
+}
+
+func (l *TestMutex) Extend() (bool, error) {
+	if l.until.IsZero() {
+		return false, errors.New("mutex not locked")
+	}
+	l.until = l.clock.Now().Add(8 * time.Second)
+	return true, nil
+}
+
+func (l *TestMutex) Until() time.Time {
+	return l.until
 }
 
 func (l *TestMutex) Lock() error {
 	if l.mutex.TryLock() {
 		return nil
 	}
+	l.until = l.clock.Now().Add(8 * time.Second)
 	return errors.New("lock failed")
 }
 
 func (l *TestMutex) Unlock() (bool, error) {
 	l.mutex.Unlock()
+	l.until = time.Time{}
 	return true, nil
 }
