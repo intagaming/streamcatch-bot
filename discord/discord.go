@@ -226,29 +226,12 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	}
 
 	author := interactionAuthor(i)
-	var userId string
-	if i.User != nil {
-		userId = i.User.ID
-	}
 	err = bot.scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
 		StreamId:   string(s.Id),
 		StreamJson: string(sc_redis.RedisStreamFromStream(s).Marshal()),
 		AuthorId:   author.ID,
 		GuildId:    i.GuildID,
-		UserId:     userId,
 	})
-	//_, err = bot.redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-	//	pipe.HSet(ctx, sc_redis.StreamsKey, sc_redis.RedisStreamFromStream(s).Marshal(), 0)
-	//	pipe.Set(ctx, sc_redis.StreamDiscordAuthorIdKey+string(s.Id), author.ID, 0)
-	//	if i.Member != nil {
-	//		pipe.SAdd(ctx, sc_redis.GuildStreamsKey+i.GuildID, s.Id)
-	//		pipe.Set(ctx, sc_redis.StreamGuildKey+string(s.Id), i.GuildID, 0)
-	//	} else {
-	//		pipe.SAdd(ctx, sc_redis.UserStreamsKey+i.User.ID, s.Id)
-	//		pipe.Set(ctx, sc_redis.StreamUserKey+string(s.Id), i.User.ID, 0)
-	//	}
-	//	return nil
-	//})
 	if err != nil {
 		panic(err)
 	}

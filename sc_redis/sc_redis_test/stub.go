@@ -44,13 +44,12 @@ func (t *TestSCRedisClient) SetStream(_ context.Context, data *sc_redis.SetStrea
 			t.GuildStreams[data.GuildId] = make(map[string]struct{})
 		}
 		t.GuildStreams[data.GuildId][data.StreamId] = struct{}{}
-	}
-	if data.UserId != "" {
-		t.StreamUserId[data.StreamId] = data.UserId
-		if _, ok := t.UserStreams[data.UserId]; !ok {
-			t.UserStreams[data.UserId] = make(map[string]struct{})
+	} else {
+		t.StreamUserId[data.StreamId] = data.AuthorId
+		if _, ok := t.UserStreams[data.AuthorId]; !ok {
+			t.UserStreams[data.AuthorId] = make(map[string]struct{})
 		}
-		t.UserStreams[data.UserId][data.StreamId] = struct{}{}
+		t.UserStreams[data.AuthorId][data.StreamId] = struct{}{}
 	}
 	return nil
 }

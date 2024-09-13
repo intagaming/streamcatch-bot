@@ -141,7 +141,6 @@ func setupTestStream(scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
 		StreamJson: string(sc_redis.RedisStreamFromStream(s).Marshal()),
 		AuthorId:   "testAuthorId",
 		GuildId:    "testGuildId",
-		UserId:     "",
 	})
 	if err != nil {
 		panic(err)

@@ -57,7 +57,6 @@ func TestBroadcaster(t *testing.T) {
 			}).Marshal()),
 			AuthorId: "authorId1",
 			GuildId:  "guildId1",
-			UserId:   "",
 		}); err != nil {
 			panic(err)
 		}
@@ -75,7 +74,6 @@ func TestBroadcaster(t *testing.T) {
 			}).Marshal()),
 			AuthorId: "authorId1",
 			GuildId:  "guildId1",
-			UserId:   "",
 		}); err != nil {
 			panic(err)
 		}
@@ -140,7 +138,6 @@ func TestBroadcaster(t *testing.T) {
 			}).Marshal()),
 			AuthorId: "authorId1",
 			GuildId:  "guildId1",
-			UserId:   "",
 		}); err != nil {
 			panic(err)
 		}
@@ -237,7 +234,6 @@ func TestBroadcaster(t *testing.T) {
 			}).Marshal()),
 			AuthorId: "authorId1",
 			GuildId:  "guildId1",
-			UserId:   "",
 		}); err != nil {
 			panic(err)
 		}

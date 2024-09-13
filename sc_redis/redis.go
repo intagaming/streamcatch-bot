@@ -10,13 +10,14 @@ import (
 const (
 	StreamsKey               = "streams"
 	StreamDiscordAuthorIdKey = "stream_discord_author_id:"
-	StreamDiscordMessageKey  = "stream_discord_message:"
-	StreamLockKey            = "stream_lock:"
-	GuildStreamsKey          = "guild_streams:"
-	StreamGuildKey           = "stream_guild:"
-	UserStreamsKey           = "user_streams:"
-	StreamUserKey            = "stream_user:"
-	MutexDuration            = 8 * time.Second
+	// TODO: set this
+	StreamDiscordMessageKey = "stream_discord_message:"
+	StreamLockKey           = "stream_lock:"
+	GuildStreamsKey         = "guild_streams:"
+	StreamGuildKey          = "stream_guild:"
+	UserStreamsKey          = "user_streams:"
+	StreamUserKey           = "stream_user:"
+	MutexDuration           = 8 * time.Second
 )
 
 type RedisStream struct {
