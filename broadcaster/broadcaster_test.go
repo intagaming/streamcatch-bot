@@ -285,7 +285,7 @@ func TestBroadcaster(t *testing.T) {
 
 		assert.True(t, mClock.Now().Before(s.Mutex.Until()))
 
-		advance(mClock, time.Minute)
+		advance(mClock, sc_redis.MutexDuration*20)
 
 		assert.True(t, mClock.Now().Before(s.Mutex.Until()))
 	})

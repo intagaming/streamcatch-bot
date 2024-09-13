@@ -8,6 +8,7 @@ import (
 	"io"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/sc_redis"
 	"time"
 
 	"go.uber.org/zap"
@@ -48,7 +49,7 @@ func (a *Agent) Run() {
 
 	clock := a.Broadcaster().Config.Clock
 	go func() {
-		t := clock.TickerFunc(a.ctx, 4*time.Second, func() error {
+		t := clock.TickerFunc(a.ctx, sc_redis.MutexDuration/2, func() error {
 			_, err := a.Stream.Mutex.Extend()
 			return err
 		}, "StreamMutexExtender")

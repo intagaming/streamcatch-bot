@@ -16,6 +16,7 @@ const (
 	StreamGuildKey           = "stream_guild:"
 	UserStreamsKey           = "user_streams:"
 	StreamUserKey            = "stream_user:"
+	MutexDuration            = 8 * time.Second
 )
 
 type RedisStream struct {
