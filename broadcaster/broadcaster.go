@@ -16,6 +16,7 @@ import (
 	"streamcatch-bot/broadcaster/stream"
 	"streamcatch-bot/broadcaster/stream/streamListener"
 	"streamcatch-bot/sc_redis"
+	sc_redis_test "streamcatch-bot/sc_redis/sc_redis_test"
 	"strings"
 	"time"
 )
@@ -78,11 +79,11 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	if err != nil {
 		return nil, err
 	}
-	mutex := &LocalMutex{}
+	clock := b.Config.Clock
+	mutex := &sc_redis_test.TestMutex{Clock: clock}
 	if err := mutex.Lock(); err != nil {
 		panic(err)
 	}
-	clock := b.Config.Clock
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
@@ -202,7 +203,7 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 	return nil
 }
 
-func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpdater streamListener.DiscordUpdater) {
+func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpdater streamListener.DiscordUpdater, mutex stream.Mutex) {
 	sl := streamListener.StreamListener{
 		Sugar:          b.sugar,
 		DiscordUpdater: discordUpdater,
@@ -219,6 +220,7 @@ func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpd
 		ThumbnailUrl:         redisStream.ThumbnailUrl,
 		Permanent:            redisStream.Permanent,
 		PlatformLastStreamId: redisStream.PlatformLastStreamId,
+		Mutex:                mutex,
 	}
 	b.HandleStream(&s)
 	b.sugar.Infof("Resumed stream %s", s.Id)
@@ -261,6 +263,6 @@ func (b *Broadcaster) ResumeStreams(discordUpdaterCreator func(s *sc_redis.Redis
 			}
 			continue
 		}
-		b.ResumeStream(&s, discordUpdater)
+		b.ResumeStream(&s, discordUpdater, mutex)
 	}
 }

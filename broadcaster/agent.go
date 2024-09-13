@@ -40,11 +40,23 @@ func (a *Agent) Broadcaster() *Broadcaster {
 }
 
 func (a *Agent) Run() {
-	a.sugar.Debugw("Agent running", "streamId", a.Stream.Id, "permanent", a.Stream.Permanent)
+	a.sugar.Debugw("Agent running", "stream", a.Stream)
 
 	// TODO: properly resume stream. For now, make it work like a new stream.
 	a.Stream.Status = stream.StatusWaiting
 	a.Stream.PlatformLastStreamId = nil
+
+	clock := a.Broadcaster().Config.Clock
+	go func() {
+		t := clock.TickerFunc(a.ctx, 4*time.Second, func() error {
+			_, err := a.Stream.Mutex.Extend()
+			return err
+		}, "StreamMutexExtender")
+		err := t.Wait()
+		if err != nil {
+			a.sugar.Errorf("Error extending stream mutex: %v", err)
+		}
+	}()
 
 	// This loop will be running only once if the stream is not permanent.
 	for {

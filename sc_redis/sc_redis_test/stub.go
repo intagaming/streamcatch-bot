@@ -11,6 +11,7 @@ import (
 )
 
 type TestSCRedisClient struct {
+	Clock          quartz.Clock
 	Streams        map[string]string
 	StreamMutexMap map[string]stream.Mutex
 	StreamAuthorId map[string]string
@@ -73,7 +74,7 @@ func (t *TestSCRedisClient) StreamMutex(streamId string) stream.Mutex {
 	if m, ok := t.StreamMutexMap[streamId]; ok {
 		return m
 	}
-	t.StreamMutexMap[streamId] = &TestMutex{}
+	t.StreamMutexMap[streamId] = &TestMutex{Clock: t.Clock}
 	return t.StreamMutexMap[streamId]
 }
 
@@ -122,7 +123,7 @@ func (t *TestSCRedisClient) GetUserStreams(_ context.Context, userId string) ([]
 }
 
 type TestMutex struct {
-	clock quartz.Clock
+	Clock quartz.Clock
 	mutex sync.Mutex
 	until time.Time
 }
@@ -131,7 +132,7 @@ func (l *TestMutex) Extend() (bool, error) {
 	if l.until.IsZero() {
 		return false, errors.New("mutex not locked")
 	}
-	l.until = l.clock.Now().Add(8 * time.Second)
+	l.until = l.Clock.Now().Add(8 * time.Second)
 	return true, nil
 }
 
@@ -141,9 +142,9 @@ func (l *TestMutex) Until() time.Time {
 
 func (l *TestMutex) Lock() error {
 	if l.mutex.TryLock() {
+		l.until = l.Clock.Now().Add(8 * time.Second)
 		return nil
 	}
-	l.until = l.clock.Now().Add(8 * time.Second)
 	return errors.New("lock failed")
 }
 

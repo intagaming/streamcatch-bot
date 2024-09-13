@@ -14,15 +14,33 @@ import (
 	"streamcatch-bot/broadcaster/stream/streamListener"
 	"streamcatch-bot/sc_redis"
 	"testing"
+	"time"
 )
 
 func TestBroadcaster(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	//sugar := logger.Sugar()
 
+	advance := func(mClock *quartz.Mock, desired time.Duration) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for {
+			p, ok := mClock.Peek()
+			if !ok || p > desired {
+				mClock.Advance(desired).MustWait(ctx)
+				<-time.After(10 * time.Millisecond)
+				break
+			}
+			mClock.Advance(p).MustWait(ctx)
+			desired -= p
+			// Give time for agent's goroutine to run logic
+			<-time.After(10 * time.Millisecond)
+		}
+	}
+
 	t.Run("ResumeStream", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 
 		ctx := context.Background()
 		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
@@ -105,7 +123,7 @@ func TestBroadcaster(t *testing.T) {
 
 	t.Run("DontResumeStreamIfLocked", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 
 		ctx := context.Background()
 		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
@@ -202,7 +220,7 @@ func TestBroadcaster(t *testing.T) {
 
 	t.Run("StreamKeepsLockingPeriodically", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 
 		ctx := context.Background()
 		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
@@ -212,7 +230,7 @@ func TestBroadcaster(t *testing.T) {
 				Url:            "http://TEST_URL",
 				Platform:       "twitch",
 				CreatedAt:      mClock.Now(),
-				ScheduledEndAt: mClock.Now(),
+				ScheduledEndAt: mClock.Now().Add(20 * time.Minute),
 				Status:         stream.StatusWaiting,
 				ThumbnailUrl:   "http://thumbnail",
 				Permanent:      false,
@@ -242,7 +260,7 @@ func TestBroadcaster(t *testing.T) {
 				platform.Twitch: &TestTwitchPlatform{
 					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
-						return nil, nil
+						return &name.WaitForOnlineData{}, nil
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return nil
@@ -253,11 +271,22 @@ func TestBroadcaster(t *testing.T) {
 			SCRedisClient: scRedisClient,
 		})
 
+		trap := mClock.Trap().TickerFunc("StreamMutexExtender")
+
 		bc.ResumeStreams(func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
 			return &TestDiscordUpdater{}, nil
 		})
 
+		call := trap.MustWait(ctx)
+		call.Release()
+
 		a := bc.Agents()["stream1"]
 		s := a.Stream
+
+		assert.True(t, mClock.Now().Before(s.Mutex.Until()))
+
+		advance(mClock, time.Minute)
+
+		assert.True(t, mClock.Now().Before(s.Mutex.Until()))
 	})
 }

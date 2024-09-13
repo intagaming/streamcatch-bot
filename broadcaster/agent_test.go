@@ -100,8 +100,9 @@ func (t *TestTwitchPlatform) Stream(ctx context.Context, s *stream.Stream, pipeW
 	return t.stream(ctx, s, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
 }
 
-func NewTestSCRedisClient() sc_redis.SCRedisClient {
+func NewTestSCRedisClient(clock quartz.Clock) sc_redis.SCRedisClient {
 	var scRedisClient sc_redis.SCRedisClient = &sc_redis_test.TestSCRedisClient{
+		Clock:          clock,
 		Streams:        make(map[string]string),
 		StreamMutexMap: make(map[string]stream.Mutex),
 		StreamAuthorId: make(map[string]string),
@@ -211,7 +212,7 @@ func TestAgent(t *testing.T) {
 		streamEndChan := make(chan struct{}, 1)
 		streamerRetryUntilSuccess := 2
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -270,7 +271,9 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex: &sc_redis_test.TestMutex{
+				Clock: mClock,
+			},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -366,7 +369,7 @@ func TestAgent(t *testing.T) {
 		ffmpegCmder := &testFfmpegCmder{}
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -407,7 +410,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -439,7 +442,7 @@ func TestAgent(t *testing.T) {
 		streamerEndChan := make(chan struct{}, 1)
 		streamerCalledTime := 0
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -485,7 +488,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -532,7 +535,7 @@ func TestAgent(t *testing.T) {
 		streamerEndChan := make(chan struct{}, 1)
 		streamerCalledTime := 0
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -575,7 +578,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -626,7 +629,7 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -672,7 +675,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -703,7 +706,7 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -750,7 +753,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -772,7 +775,7 @@ func TestAgent(t *testing.T) {
 		streamerData := []byte{69, 110, 105, 99, 101}
 		streamEndChan := make(chan struct{}, 1)
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder = &testFfmpegCmder{
@@ -827,7 +830,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
 
@@ -921,7 +924,7 @@ func TestAgent(t *testing.T) {
 		var ffmpegCmder *testFfmpegCmder
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder = &testFfmpegCmder{
@@ -964,7 +967,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
 
@@ -986,7 +989,7 @@ func TestAgent(t *testing.T) {
 		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamEndChan := make(chan struct{}, 1)
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -1038,7 +1041,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -1090,7 +1093,7 @@ func TestAgent(t *testing.T) {
 		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamGoneOnlineId := "stream1"
 
-		scRedisClient := NewTestSCRedisClient()
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder = &testFfmpegCmder{
@@ -1139,7 +1142,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{},
+			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
 
