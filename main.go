@@ -39,6 +39,7 @@ func init() {
 
 func main() {
 	flag.Parse()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var logger *zap.Logger
 	var err error
@@ -121,6 +122,7 @@ func main() {
 
 	var scRedisClient sc_redis.SCRedisClient = &sc_redis.RealSCRedisClient{Redis: rdb, Redsync: rs}
 
+	var bot *discord.Bot
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
 		TwitchClientSecret:            twitchClientSecret,
@@ -164,44 +166,47 @@ func main() {
 		},
 		Clock:         quartz.NewReal(),
 		SCRedisClient: scRedisClient,
+		DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+			ctx := context.Background()
+			var interaction *discordgo.Interaction
+			interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)
+			if err == nil {
+				interaction = &discordgo.Interaction{}
+				err = interaction.UnmarshalJSON([]byte(interactionJson))
+				if err != nil {
+					return nil, err
+				}
+			}
+			var message *discordgo.Message
+			messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
+			if err == nil {
+				message = &discordgo.Message{}
+				err = message.UnmarshalJSON([]byte(messageJson))
+				if err != nil {
+					return nil, err
+				}
+			}
+			var authorId string
+			authorId, err = scRedisClient.GetStreamAuthorId(ctx, s.Id)
+			if err != nil {
+				return nil, err
+			}
+
+			return &discord.RealDiscordUpdater{
+				Bot:         bot,
+				Interaction: interaction,
+				Message:     message,
+				AuthorId:    authorId,
+			}, nil
+		},
 	})
 
-	bot := discord.New(sugar, bc, scRedisClient)
+	bot = discord.New(sugar, bc, scRedisClient)
 
 	// get streams from db and handle
-	bc.ResumeStreams(func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
-		ctx := context.Background()
-		var interaction *discordgo.Interaction
-		interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)
-		if err == nil {
-			interaction = &discordgo.Interaction{}
-			err = interaction.UnmarshalJSON([]byte(interactionJson))
-			if err != nil {
-				return nil, err
-			}
-		}
-		var message *discordgo.Message
-		messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
-		if err == nil {
-			message = &discordgo.Message{}
-			err = message.UnmarshalJSON([]byte(messageJson))
-			if err != nil {
-				return nil, err
-			}
-		}
-		var authorId string
-		authorId, err = scRedisClient.GetStreamAuthorId(ctx, s.Id)
-		if err != nil {
-			return nil, err
-		}
-
-		return &discord.RealDiscordUpdater{
-			Bot:         bot,
-			Interaction: interaction,
-			Message:     message,
-			AuthorId:    authorId,
-		}, nil
-	})
+	sugar.Info("Resuming streams...")
+	bc.ResumeStreams()
+	bc.ResumeStreamPoller(ctx)
 
 	if isDev {
 		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
@@ -233,9 +238,13 @@ func main() {
 		}()
 	}
 
+	sugar.Info("Initialization complete.")
+
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, os.Interrupt)
 	<-sigch
+
+	cancel()
 
 	err = bot.Close()
 	if err != nil {

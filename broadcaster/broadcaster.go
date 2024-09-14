@@ -41,11 +41,11 @@ type Config struct {
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, s *stream.Stream) (*stream.Info, error)
 	SCRedisClient                 sc_redis.SCRedisClient
+	DiscordUpdaterCreator         func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error)
 }
 
 type Broadcaster struct {
-	sugar *zap.SugaredLogger
-	// TODO: persist this
+	sugar  *zap.SugaredLogger
 	agents map[stream.Id]*Agent
 	helix  *helix.Client
 	Config *Config
@@ -226,14 +226,29 @@ func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpd
 	b.sugar.Infof("Resumed stream %s", s.Id)
 }
 
-func (b *Broadcaster) ResumeStreams(discordUpdaterCreator func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error)) {
+func (b *Broadcaster) ResumeStreamPoller(ctx context.Context) {
+	b.sugar.Info("ResumeStreamPoller starting")
+	clock := b.Config.Clock
+	go func() {
+		t := clock.TickerFunc(ctx, 30*time.Second, func() error {
+			b.ResumeStreams()
+			return nil
+		}, "ResumeStreamPoller")
+		err := t.Wait()
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		b.sugar.Errorf("ResumeStreamPoller errored: %v", err)
+	}()
+}
+
+func (b *Broadcaster) ResumeStreams() {
 	scRedisClient := b.Config.SCRedisClient
 	ctx := context.Background()
 	streams, err := scRedisClient.GetStreams(ctx)
 	if err != nil {
 		panic(err)
 	}
-	// TODO: continue polling for unhandled streams in db in case lock expires
 	for streamId, streamJson := range streams {
 		// Obtain right to handle stream
 		mutex := scRedisClient.StreamMutex(streamId)
@@ -254,7 +269,7 @@ func (b *Broadcaster) ResumeStreams(discordUpdaterCreator func(s *sc_redis.Redis
 			continue
 		}
 
-		discordUpdater, err := discordUpdaterCreator(&s)
+		discordUpdater, err := b.Config.DiscordUpdaterCreator(&s)
 		if err != nil {
 			b.sugar.Errorf("Could not create discord updater for stream %s, deleting", streamId)
 			err := scRedisClient.CleanupStream(ctx, streamId)
