@@ -11,13 +11,13 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"io"
-	"streamcatch-bot/broadcaster/bc_config"
+	"streamcatch-bot/broadcaster/bcconfig"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/broadcaster/stream/streamListener"
-	"streamcatch-bot/sc_redis"
-	sc_redis_test "streamcatch-bot/sc_redis/sc_redis_test"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
+	"streamcatch-bot/scredis"
+	scredistest "streamcatch-bot/scredis/scredistest"
 	"sync"
 	"testing"
 	"time"
@@ -100,8 +100,8 @@ func (t *TestTwitchPlatform) Stream(ctx context.Context, s *stream.Stream, pipeW
 	return t.stream(ctx, s, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
 }
 
-func NewTestSCRedisClient(clock quartz.Clock) sc_redis.SCRedisClient {
-	var scRedisClient sc_redis.SCRedisClient = &sc_redis_test.TestSCRedisClient{
+func NewTestSCRedisClient(clock quartz.Clock) scredis.Client {
+	var scRedisClient scredis.Client = &scredistest.TestSCRedisClient{
 		Clock:          clock,
 		Streams:        make(map[string]string),
 		StreamMutexMap: make(map[string]stream.Mutex),
@@ -115,30 +115,30 @@ func NewTestSCRedisClient(clock quartz.Clock) sc_redis.SCRedisClient {
 	return scRedisClient
 }
 
-func GetRedisStream(t *testing.T, scRedisClient sc_redis.SCRedisClient, streamId string) sc_redis.RedisStream {
+func GetRedisStream(t *testing.T, scRedisClient scredis.Client, streamId string) scredis.RedisStream {
 	streamJson, err := scRedisClient.GetStream(context.Background(), streamId)
 	assert.Nil(t, err)
-	var redisStream sc_redis.RedisStream
+	var redisStream scredis.RedisStream
 	err = json.Unmarshal([]byte(streamJson), &redisStream)
 	assert.Nil(t, err)
 	return redisStream
 }
 
-func AssertRedisStreamPersisted(t *testing.T, scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
+func AssertRedisStreamPersisted(t *testing.T, scRedisClient scredis.Client, s *stream.Stream) {
 	streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
 	assert.Nil(t, err)
-	assert.Equal(t, streamJson, string(sc_redis.RedisStreamFromStream(s).Marshal()))
+	assert.Equal(t, streamJson, string(scredis.RedisStreamFromStream(s).Marshal()))
 }
 
-func setupTestStream(scRedisClient sc_redis.SCRedisClient, s *stream.Stream) {
+func setupTestStream(scRedisClient scredis.Client, s *stream.Stream) {
 	err := s.Mutex.Lock()
 	if err != nil {
 		panic(err)
 	}
 	ctx := context.Background()
-	err = scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+	err = scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 		StreamId:   string(s.Id),
-		StreamJson: string(sc_redis.RedisStreamFromStream(s).Marshal()),
+		StreamJson: string(scredis.RedisStreamFromStream(s).Marshal()),
 		AuthorId:   "testAuthorId",
 		GuildId:    "testGuildId",
 	})
@@ -257,7 +257,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -268,9 +268,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex: &sc_redis_test.TestMutex{
+			Mutex: &scredistest.TestMutex{
 				Clock: mClock,
 			},
 		}
@@ -396,7 +396,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -407,9 +407,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -474,7 +474,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -485,9 +485,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -564,7 +564,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -575,9 +575,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -661,7 +661,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -672,9 +672,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -739,7 +739,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -750,9 +750,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -816,7 +816,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -829,7 +829,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
 
@@ -953,7 +953,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -966,7 +966,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
 
@@ -1027,7 +1027,7 @@ func TestAgent(t *testing.T) {
 			Clock:         mClock,
 			SCRedisClient: scRedisClient,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -1038,9 +1038,9 @@ func TestAgent(t *testing.T) {
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(bc_config.ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
 
 		setupTestStream(scRedisClient, &s)
@@ -1128,7 +1128,7 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := streamListener.StreamListener{
+		listener := streamlistener.StreamListener{
 			Sugar:          sugar,
 			DiscordUpdater: &TestDiscordUpdater{},
 			SCRedisClient:  scRedisClient,
@@ -1141,7 +1141,7 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
-			Mutex:          &sc_redis_test.TestMutex{Clock: mClock},
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
 

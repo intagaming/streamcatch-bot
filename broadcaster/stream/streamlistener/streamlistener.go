@@ -1,20 +1,20 @@
-package streamListener
+package streamlistener
 
 import (
 	"context"
 	"go.uber.org/zap"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/sc_redis"
+	"streamcatch-bot/scredis"
 )
 
 type StreamListener struct {
 	Sugar          *zap.SugaredLogger
 	DiscordUpdater DiscordUpdater
-	SCRedisClient  sc_redis.SCRedisClient
+	SCRedisClient  scredis.Client
 }
 
 func (sl *StreamListener) Status(s *stream.Stream) {
-	err := sc_redis.PersistStream(sl.SCRedisClient, s)
+	err := scredis.PersistStream(sl.SCRedisClient, s)
 	if err != nil {
 		sl.Sugar.Errorf("Error setting stream: %v", err)
 	}

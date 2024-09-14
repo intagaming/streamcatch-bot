@@ -1,4 +1,4 @@
-package bc_config
+package bcconfig
 
 import "time"
 

@@ -1,4 +1,4 @@
-package sc_redis
+package scredis
 
 import (
 	"encoding/json"

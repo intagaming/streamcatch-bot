@@ -1,11 +1,11 @@
-package sc_redis
+package scredis
 
 import (
 	"context"
 	"errors"
 	"github.com/coder/quartz"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/sc_redis"
+	"streamcatch-bot/scredis"
 	"sync"
 	"time"
 )
@@ -45,7 +45,7 @@ func (t *TestSCRedisClient) GetStream(_ context.Context, streamId string) (strin
 	return t.Streams[streamId], nil
 }
 
-func (t *TestSCRedisClient) SetStream(_ context.Context, data *sc_redis.SetStreamData) error {
+func (t *TestSCRedisClient) SetStream(_ context.Context, data *scredis.SetStreamData) error {
 	t.Streams[data.StreamId] = data.StreamJson
 	t.StreamAuthorId[data.StreamId] = data.AuthorId
 	if data.GuildId != "" {

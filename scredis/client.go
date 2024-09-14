@@ -1,4 +1,4 @@
-package sc_redis
+package scredis
 
 import (
 	"context"
@@ -15,7 +15,7 @@ type SetStreamData struct {
 	GuildId    string
 }
 
-type SCRedisClient interface {
+type Client interface {
 	GetStreams(ctx context.Context) (map[string]string, error)
 	GetStream(ctx context.Context, streamId string) (string, error)
 	SetStream(ctx context.Context, data *SetStreamData) error
@@ -137,6 +137,6 @@ func (r *RealSCRedisClient) GetUserStreams(ctx context.Context, userId string) (
 	return r.Redis.SMembers(ctx, UserStreamsKey+userId).Result()
 }
 
-func PersistStream(scRedisClient SCRedisClient, s *stream.Stream) error {
+func PersistStream(scRedisClient Client, s *stream.Stream) error {
 	return scRedisClient.SetStreamJson(context.Background(), string(s.Id), string(RedisStreamFromStream(s).Marshal()))
 }

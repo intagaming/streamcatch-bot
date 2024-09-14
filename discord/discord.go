@@ -9,8 +9,8 @@ import (
 	"os"
 	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/broadcaster/stream/streamListener"
-	"streamcatch-bot/sc_redis"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
+	"streamcatch-bot/scredis"
 	"strings"
 	"time"
 )
@@ -26,7 +26,7 @@ var (
 )
 
 type Bot struct {
-	scRedisClient                sc_redis.SCRedisClient
+	scRedisClient                scredis.Client
 	sugar                        *zap.SugaredLogger
 	session                      *discordgo.Session
 	broadcaster                  *broadcaster.Broadcaster
@@ -35,7 +35,7 @@ type Bot struct {
 	mediaServerPlaybackUrlPublic string
 }
 
-func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc_redis.SCRedisClient) *Bot {
+func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient scredis.Client) *Bot {
 	botToken := os.Getenv("BOT_TOKEN")
 	appId := os.Getenv("APP_ID")
 
@@ -202,7 +202,7 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		bot.sugar.Errorf("could not respond to interaction: %s", err)
 	}
 
-	sl := streamListener.StreamListener{
+	sl := streamlistener.StreamListener{
 		Sugar: bot.sugar,
 		DiscordUpdater: &RealDiscordUpdater{
 			Bot:         bot,
@@ -227,9 +227,9 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	}
 
 	author := interactionAuthor(i)
-	err = bot.scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+	err = bot.scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 		StreamId:   string(s.Id),
-		StreamJson: string(sc_redis.RedisStreamFromStream(s).Marshal()),
+		StreamJson: string(scredis.RedisStreamFromStream(s).Marshal()),
 		AuthorId:   author.ID,
 		GuildId:    i.GuildID,
 	})

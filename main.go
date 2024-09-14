@@ -21,9 +21,9 @@ import (
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/broadcaster/stream/streamListener"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
 	"streamcatch-bot/discord"
-	"streamcatch-bot/sc_redis"
+	"streamcatch-bot/scredis"
 )
 
 var isDev bool
@@ -51,7 +51,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
-	defer logger.Sync()
+	defer func(logger *zap.Logger) {
+		err := logger.Sync()
+		if err != nil {
+			log.Printf("failed to sync logger: %v", err)
+		}
+	}(logger)
 	sugar := logger.Sugar()
 
 	if _, err := exec.LookPath("streamlink"); err != nil {
@@ -120,7 +125,7 @@ func main() {
 	pool := goredis.NewPool(rdb)
 	rs := redsync.New(pool)
 
-	var scRedisClient sc_redis.SCRedisClient = &sc_redis.RealSCRedisClient{Redis: rdb, Redsync: rs}
+	var scRedisClient scredis.Client = &scredis.RealSCRedisClient{Redis: rdb, Redsync: rs}
 
 	var bot *discord.Bot
 	bc := broadcaster.New(sugar, &broadcaster.Config{
@@ -166,7 +171,7 @@ func main() {
 		},
 		Clock:         quartz.NewReal(),
 		SCRedisClient: scRedisClient,
-		DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+		DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 			ctx := context.Background()
 			var interaction *discordgo.Interaction
 			interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)

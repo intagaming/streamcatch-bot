@@ -11,8 +11,8 @@ import (
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/broadcaster/stream/streamListener"
-	"streamcatch-bot/sc_redis"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
+	"streamcatch-bot/scredis"
 	"testing"
 	"time"
 )
@@ -43,9 +43,9 @@ func TestBroadcaster(t *testing.T) {
 		scRedisClient := NewTestSCRedisClient(mClock)
 
 		ctx := context.Background()
-		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+		if err := scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 			StreamId: "stream1",
-			StreamJson: string((&sc_redis.RedisStream{
+			StreamJson: string((&scredis.RedisStream{
 				Id:             "stream1",
 				Url:            "http://TEST_URL",
 				Platform:       "twitch",
@@ -60,9 +60,9 @@ func TestBroadcaster(t *testing.T) {
 		}); err != nil {
 			panic(err)
 		}
-		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+		if err := scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 			StreamId: "stream2",
-			StreamJson: string((&sc_redis.RedisStream{
+			StreamJson: string((&scredis.RedisStream{
 				Id:             "stream2",
 				Url:            "http://TEST_URL",
 				Platform:       "twitch",
@@ -105,7 +105,7 @@ func TestBroadcaster(t *testing.T) {
 			},
 			Clock:         mClock,
 			SCRedisClient: scRedisClient,
-			DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+			DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 				return &TestDiscordUpdater{}, nil
 			},
 		})
@@ -125,9 +125,9 @@ func TestBroadcaster(t *testing.T) {
 		scRedisClient := NewTestSCRedisClient(mClock)
 
 		ctx := context.Background()
-		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+		if err := scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 			StreamId: "stream1",
-			StreamJson: string((&sc_redis.RedisStream{
+			StreamJson: string((&scredis.RedisStream{
 				Id:             "stream1",
 				Url:            "http://TEST_URL",
 				Platform:       "twitch",
@@ -170,7 +170,7 @@ func TestBroadcaster(t *testing.T) {
 			},
 			Clock:         mClock,
 			SCRedisClient: scRedisClient,
-			DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+			DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 				return &TestDiscordUpdater{}, nil
 			},
 		})
@@ -207,7 +207,7 @@ func TestBroadcaster(t *testing.T) {
 			},
 			Clock:         mClock,
 			SCRedisClient: scRedisClient,
-			DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+			DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 				return &TestDiscordUpdater{}, nil
 			},
 		})
@@ -223,9 +223,9 @@ func TestBroadcaster(t *testing.T) {
 		scRedisClient := NewTestSCRedisClient(mClock)
 
 		ctx := context.Background()
-		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+		if err := scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 			StreamId: "stream1",
-			StreamJson: string((&sc_redis.RedisStream{
+			StreamJson: string((&scredis.RedisStream{
 				Id:             "stream1",
 				Url:            "http://TEST_URL",
 				Platform:       "twitch",
@@ -268,7 +268,7 @@ func TestBroadcaster(t *testing.T) {
 			},
 			Clock:         mClock,
 			SCRedisClient: scRedisClient,
-			DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+			DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 				return &TestDiscordUpdater{}, nil
 			},
 		})
@@ -285,7 +285,7 @@ func TestBroadcaster(t *testing.T) {
 
 		assert.True(t, mClock.Now().Before(s.Mutex.Until()))
 
-		advance(mClock, sc_redis.MutexDuration*20)
+		advance(mClock, scredis.MutexDuration*20)
 
 		assert.True(t, mClock.Now().Before(s.Mutex.Until()))
 	})
@@ -299,9 +299,9 @@ func TestBroadcaster(t *testing.T) {
 		assert.Nil(t, err)
 
 		ctx := context.Background()
-		if err := scRedisClient.SetStream(ctx, &sc_redis.SetStreamData{
+		if err := scRedisClient.SetStream(ctx, &scredis.SetStreamData{
 			StreamId: "stream1",
-			StreamJson: string((&sc_redis.RedisStream{
+			StreamJson: string((&scredis.RedisStream{
 				Id:             "stream1",
 				Url:            "http://TEST_URL",
 				Platform:       "twitch",
@@ -344,7 +344,7 @@ func TestBroadcaster(t *testing.T) {
 			},
 			Clock:         mClock,
 			SCRedisClient: scRedisClient,
-			DiscordUpdaterCreator: func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
+			DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 				return &TestDiscordUpdater{}, nil
 			},
 		})

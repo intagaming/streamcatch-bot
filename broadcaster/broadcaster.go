@@ -10,13 +10,13 @@ import (
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"os/exec"
-	"streamcatch-bot/broadcaster/bc_config"
+	"streamcatch-bot/broadcaster/bcconfig"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
-	"streamcatch-bot/broadcaster/stream/streamListener"
-	"streamcatch-bot/sc_redis"
-	sc_redis_test "streamcatch-bot/sc_redis/sc_redis_test"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
+	"streamcatch-bot/scredis"
+	scredistest "streamcatch-bot/scredis/scredistest"
 	"strings"
 	"time"
 )
@@ -40,8 +40,8 @@ type Config struct {
 	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
 	StreamerInfoFetcher           func(ctx context.Context, s *stream.Stream) (*stream.Info, error)
-	SCRedisClient                 sc_redis.SCRedisClient
-	DiscordUpdaterCreator         func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error)
+	SCRedisClient                 scredis.Client
+	DiscordUpdaterCreator         func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error)
 }
 
 type Broadcaster struct {
@@ -80,7 +80,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 		return nil, err
 	}
 	clock := b.Config.Clock
-	mutex := &sc_redis_test.TestMutex{Clock: clock}
+	mutex := &scredistest.TestMutex{Clock: clock}
 	if err := mutex.Lock(); err != nil {
 		panic(err)
 	}
@@ -89,7 +89,7 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 		Url:            url,
 		Platform:       platform.Local,
 		CreatedAt:      clock.Now(),
-		ScheduledEndAt: clock.Now().Add(bc_config.ScheduledEndDuration),
+		ScheduledEndAt: clock.Now().Add(bcconfig.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
 		Mutex:          mutex,
@@ -143,7 +143,7 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 		Url:            url,
 		Platform:       platformName,
 		CreatedAt:      clock.Now(),
-		ScheduledEndAt: clock.Now().Add(bc_config.ScheduledEndDuration),
+		ScheduledEndAt: clock.Now().Add(bcconfig.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
 		Mutex:          mutex,
@@ -196,15 +196,15 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
 	a.Stream.ScheduledEndAt = newScheduledEndAt
-	err := sc_redis.PersistStream(b.Config.SCRedisClient, a.Stream)
+	err := scredis.PersistStream(b.Config.SCRedisClient, a.Stream)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (b *Broadcaster) ResumeStream(redisStream *sc_redis.RedisStream, discordUpdater streamListener.DiscordUpdater, mutex stream.Mutex) {
-	sl := streamListener.StreamListener{
+func (b *Broadcaster) ResumeStream(redisStream *scredis.RedisStream, discordUpdater streamlistener.DiscordUpdater, mutex stream.Mutex) {
+	sl := streamlistener.StreamListener{
 		Sugar:          b.sugar,
 		DiscordUpdater: discordUpdater,
 		SCRedisClient:  b.Config.SCRedisClient,
@@ -258,7 +258,7 @@ func (b *Broadcaster) ResumeStreams() {
 			continue
 		}
 
-		var s sc_redis.RedisStream
+		var s scredis.RedisStream
 		err = json.Unmarshal([]byte(streamJson), &s)
 		if err != nil {
 			b.sugar.Errorf("Could not unmarshal stream %s, deleting", streamId)
