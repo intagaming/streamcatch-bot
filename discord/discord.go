@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
@@ -233,6 +234,16 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		GuildId:    i.GuildID,
 	})
 	if err != nil {
+		// TODO: handle err
+		panic(err)
+	}
+	interactionJson, err := json.Marshal(i)
+	if err != nil {
+		panic(err)
+	}
+	err = bot.scRedisClient.SetStreamInteraction(ctx, string(s.Id), string(interactionJson))
+	if err != nil {
+		// TODO: handle err
 		panic(err)
 	}
 

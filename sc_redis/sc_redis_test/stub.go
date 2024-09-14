@@ -11,15 +11,25 @@ import (
 )
 
 type TestSCRedisClient struct {
-	Clock          quartz.Clock
-	Streams        map[string]string
-	StreamMutexMap map[string]stream.Mutex
-	StreamAuthorId map[string]string
-	StreamGuildId  map[string]string
-	GuildStreams   map[string]map[string]struct{}
-	StreamUserId   map[string]string
-	UserStreams    map[string]map[string]struct{}
-	StreamMessage  map[string]string
+	Clock             quartz.Clock
+	Streams           map[string]string
+	StreamMutexMap    map[string]stream.Mutex
+	StreamAuthorId    map[string]string
+	StreamGuildId     map[string]string
+	GuildStreams      map[string]map[string]struct{}
+	StreamUserId      map[string]string
+	UserStreams       map[string]map[string]struct{}
+	StreamMessage     map[string]string
+	StreamInteraction map[string]string
+}
+
+func (t *TestSCRedisClient) GetStreamInteraction(_ context.Context, streamId string) (string, error) {
+	return t.StreamInteraction[streamId], nil
+}
+
+func (t *TestSCRedisClient) SetStreamInteraction(_ context.Context, streamId string, interactionString string) error {
+	t.StreamInteraction[streamId] = interactionString
+	return nil
 }
 
 func (t *TestSCRedisClient) SetStreamJson(_ context.Context, streamId string, streamJson string) error {

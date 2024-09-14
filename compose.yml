@@ -20,8 +20,8 @@ services:
       - MEDIA_SERVER_PUBLISH_USER=${MEDIA_SERVER_PUBLISH_USER}
       - MEDIA_SERVER_PUBLISH_PASSWORD=${MEDIA_SERVER_PUBLISH_PASSWORD}
       - MEDIA_SERVER_API_URL=http://mediaserver:9997
-      - REDIS_ADDR=${REDIS_ADDR}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_ADDR=redis
+      - REDIS_PASSWORD=
     networks:
       - streamcatch
 

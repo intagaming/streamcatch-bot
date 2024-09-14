@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -172,10 +171,20 @@ func main() {
 	// get streams from db and handle
 	bc.ResumeStreams(func(s *sc_redis.RedisStream) (streamListener.DiscordUpdater, error) {
 		ctx := context.Background()
+		var interaction *discordgo.Interaction
+		interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)
+		// TODO: check empty string?
+		sugar.Debugw("interactionJson", "iJs", interactionJson)
+		if err == nil {
+			err = interaction.UnmarshalJSON([]byte(interactionJson))
+			if err != nil {
+				return nil, err
+			}
+		}
 		var message *discordgo.Message
 		messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
 		if err == nil {
-			err = json.Unmarshal([]byte(messageJson), &message)
+			err = message.UnmarshalJSON([]byte(messageJson))
 			if err != nil {
 				return nil, err
 			}
@@ -188,7 +197,7 @@ func main() {
 
 		return &discord.RealDiscordUpdater{
 			Bot:         bot,
-			Interaction: nil,
+			Interaction: interaction,
 			Message:     message,
 			AuthorId:    authorId,
 		}, nil

@@ -21,6 +21,8 @@ type SCRedisClient interface {
 	SetStreamJson(ctx context.Context, streamId string, streamJson string) error
 	CleanupStream(ctx context.Context, streamId string) error
 	StreamMutex(streamId string) stream.Mutex
+	GetStreamInteraction(ctx context.Context, streamId string) (string, error)
+	SetStreamInteraction(ctx context.Context, streamId string, interactionString string) error
 	GetStreamMessage(ctx context.Context, streamId string) (string, error)
 	SetStreamMessage(ctx context.Context, streamId string, messageJson string) error
 	GetStreamAuthorId(ctx context.Context, streamId string) (string, error)
@@ -32,6 +34,14 @@ type SCRedisClient interface {
 type RealSCRedisClient struct {
 	Redis   *redis.Client
 	Redsync *redsync.Redsync
+}
+
+func (r *RealSCRedisClient) GetStreamInteraction(ctx context.Context, streamId string) (string, error) {
+	return r.Redis.Get(ctx, StreamDiscordInteractionKey+streamId).Result()
+}
+
+func (r *RealSCRedisClient) SetStreamInteraction(ctx context.Context, streamId string, interactionString string) error {
+	return r.Redis.Set(ctx, StreamDiscordInteractionKey+streamId, interactionString, 0).Err()
 }
 
 func (r *RealSCRedisClient) SetStreamJson(ctx context.Context, streamId string, streamJson string) error {
@@ -50,21 +60,16 @@ func (r *RealSCRedisClient) SetStream(ctx context.Context, data *SetStreamData) 
 	_, err := r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.HSet(ctx, StreamsKey, data.StreamId, data.StreamJson)
 		pipe.Set(ctx, StreamDiscordAuthorIdKey+data.StreamId, data.AuthorId, 0)
-		//pipe.SAdd(ctx, Guil)
+		if data.GuildId != "" {
+			pipe.SAdd(ctx, GuildStreamsKey+data.GuildId, data.StreamId)
+			pipe.Set(ctx, StreamGuildKey+data.StreamId, data.GuildId, 0)
+		} else {
+			pipe.SAdd(ctx, UserStreamsKey+data.AuthorId, data.StreamId)
+			pipe.Set(ctx, StreamUserKey+data.StreamId, data.AuthorId, 0)
+		}
+		return nil
 	})
-	//_, err = bot.redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-	//	pipe.HSet(ctx, sc_redis.StreamsKey, sc_redis.RedisStreamFromStream(s).Marshal(), 0)
-	//	pipe.Set(ctx, sc_redis.StreamDiscordAuthorIdKey+string(s.Id), author.ID, 0)
-	//	if i.Member != nil {
-	//		pipe.SAdd(ctx, sc_redis.GuildStreamsKey+i.GuildID, s.Id)
-	//		pipe.Set(ctx, sc_redis.StreamGuildKey+string(s.Id), i.GuildID, 0)
-	//	} else {
-	//		pipe.SAdd(ctx, sc_redis.UserStreamsKey+i.User.ID, s.Id)
-	//		pipe.Set(ctx, sc_redis.StreamUserKey+string(s.Id), i.User.ID, 0)
-	//	}
-	//	return nil
-	//})
-	panic("implement me")
+	return err
 }
 
 func (r *RealSCRedisClient) CleanupStream(ctx context.Context, streamId string) error {
@@ -87,33 +92,28 @@ func (r *RealSCRedisClient) StreamMutex(streamId string) stream.Mutex {
 }
 
 func (r *RealSCRedisClient) GetStreamMessage(ctx context.Context, streamId string) (string, error) {
-	//TODO implement me
-	panic("implement me")
+	return r.Redis.Get(ctx, StreamDiscordMessageKey+streamId).Result()
 }
 
+// TODO: use this
 func (r *RealSCRedisClient) SetStreamMessage(ctx context.Context, streamId string, messageJson string) error {
-	//TODO implement me
-	panic("implement me")
+	return r.Redis.Set(ctx, StreamDiscordMessageKey+streamId, messageJson, 0).Err()
 }
 
 func (r *RealSCRedisClient) GetStreamAuthorId(ctx context.Context, streamId string) (string, error) {
-	//TODO implement me
-	panic("implement me")
+	return r.Redis.Get(ctx, StreamDiscordAuthorIdKey+streamId).Result()
 }
 
 func (r *RealSCRedisClient) SetStreamAuthorId(ctx context.Context, streamId string, authorId string) error {
-	//TODO implement me
-	panic("implement me")
+	return r.Redis.Set(ctx, StreamDiscordAuthorIdKey+streamId, authorId, 0).Err()
 }
 
 func (r *RealSCRedisClient) GetGuildStreams(ctx context.Context, guildId string) ([]string, error) {
-	//TODO implement me
-	panic("implement me")
+	return r.Redis.SMembers(ctx, GuildStreamsKey+guildId).Result()
 }
 
 func (r *RealSCRedisClient) GetUserStreams(ctx context.Context, userId string) ([]string, error) {
-	//TODO implement me
-	panic("implement me")
+	return r.Redis.SMembers(ctx, UserStreamsKey+userId).Result()
 }
 
 func PersistStream(scRedisClient SCRedisClient, s *stream.Stream) error {

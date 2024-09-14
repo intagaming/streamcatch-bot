@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster/stream"
@@ -44,7 +46,7 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 		if err != nil {
 			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
-	} else {
+	} else if r.Interaction != nil {
 		discordMsg, err := r.Bot.session.FollowupMessageCreate(r.Interaction, true, &discordgo.WebhookParams{
 			Content:    content,
 			Components: msg.Components,
@@ -54,5 +56,13 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
 		r.Message = discordMsg
+		msgJson, err := json.Marshal(discordMsg)
+		if err != nil {
+			panic(err)
+		}
+		err = r.Bot.scRedisClient.SetStreamMessage(context.Background(), string(s.Id), string(msgJson))
+		if err != nil {
+			r.Bot.sugar.Errorf("could not set stream message: %v", err)
+		}
 	}
 }
