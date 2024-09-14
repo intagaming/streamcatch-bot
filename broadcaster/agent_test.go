@@ -208,7 +208,6 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamerData := []byte{69, 110, 105, 99, 101}
-		streamEndChan := make(chan struct{}, 1)
 		streamerRetryUntilSuccess := 2
 
 		scRedisClient := NewTestSCRedisClient(mClock)
@@ -246,12 +245,8 @@ func TestAgent(t *testing.T) {
 						if err != nil {
 							return fmt.Errorf("unexpected streamer write error: %w", err)
 						}
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-streamEndChan:
-						}
-						return nil
+						<-ctx.Done()
+						return ctx.Err()
 					},
 				},
 			},
@@ -769,10 +764,8 @@ func TestAgent(t *testing.T) {
 		var ffmpegCmder *testFfmpegCmder
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamGoneOnlineChan := make(chan struct{}, 1)
-		//streamGoneOnlineIdChan := make(chan string, 1)
 		streamGoneOnlineId := "stream1"
 		streamerData := []byte{69, 110, 105, 99, 101}
-		streamEndChan := make(chan struct{}, 1)
 
 		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
@@ -805,12 +798,8 @@ func TestAgent(t *testing.T) {
 						if err != nil {
 							return fmt.Errorf("unexpected streamer write error: %w", err)
 						}
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-streamEndChan:
-						}
-						return nil
+						<-ctx.Done()
+						return ctx.Err()
 					},
 				},
 			},
@@ -986,7 +975,6 @@ func TestAgent(t *testing.T) {
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
-		streamEndChan := make(chan struct{}, 1)
 
 		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
@@ -1015,12 +1003,8 @@ func TestAgent(t *testing.T) {
 						return &name.WaitForOnlineData{}, nil
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-streamEndChan:
-						}
-						return nil
+						<-ctx.Done()
+						return ctx.Err()
 					},
 				},
 			},
