@@ -8,6 +8,7 @@ import (
 	"io"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/scredis"
 	"time"
 
 	"go.uber.org/zap"
@@ -40,7 +41,32 @@ func (a *Agent) Broadcaster() *Broadcaster {
 }
 
 func (a *Agent) Run() {
-	a.sugar.Debugw("Agent running", "streamId", a.Stream.Id, "permanent", a.Stream.Permanent)
+	a.sugar.Debugw("Agent running", "stream", a.Stream)
+
+	// If stream timed out, don't run further.
+	a.checkTimeout()
+	if a.ctx.Err() != nil {
+		return
+	}
+
+	// TODO: properly resume stream. For now, make it work like a new stream.
+	a.Stream.Status = stream.StatusWaiting
+	a.Stream.PlatformLastStreamId = nil
+
+	clock := a.Broadcaster().Config.Clock
+	go func() {
+		t := clock.TickerFunc(a.ctx, scredis.MutexDuration/2, func() error {
+			_, err := a.Stream.Mutex.Extend()
+			return err
+		}, "StreamMutexExtender")
+		err := t.Wait()
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		if err != nil {
+			a.sugar.Errorf("Error extending stream mutex: %v", err)
+		}
+	}()
 
 	// This loop will be running only once if the stream is not permanent.
 	for {
@@ -55,7 +81,7 @@ func (a *Agent) HandleOneStreamInstance() {
 	a.sugar.Debugw("HandleOneStreamInstance being called", "streamId", a.Stream.Id)
 
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 
 	iterationCtx, cancelIterationCtx := context.WithCancel(a.ctx)
 	defer cancelIterationCtx()
@@ -79,7 +105,7 @@ func (a *Agent) HandleOneStreamInstance() {
 	}
 
 	// Wait for stream to come online based on the platform
-	platform, ok := b.config.StreamPlatforms[a.Stream.Platform]
+	platform, ok := b.Config.StreamPlatforms[a.Stream.Platform]
 	if !ok {
 		a.Close(stream.ReasonErrored, fmt.Errorf("unknown platform: %s", a.Stream.Platform))
 		return
@@ -194,9 +220,9 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 
 func (a *Agent) StreamPoller(ctx context.Context) {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	try := func() error {
-		available, err := b.config.StreamAvailableChecker(a.Stream.Id)
+		available, err := b.Config.StreamAvailableChecker(a.Stream.Id)
 		if err != nil {
 			return err
 		}
@@ -219,6 +245,7 @@ func (a *Agent) StreamPoller(ctx context.Context) {
 			return nil
 		}
 		a.sugar.Debugw("StreamPoller: Done", "streamId", a.Stream.Id)
+		a.Stream.SCStreamStarted = true
 		a.Stream.Listener.StreamStarted(a.Stream)
 		tickerCancel()
 		return nil
@@ -231,7 +258,7 @@ func (a *Agent) StreamPoller(ctx context.Context) {
 
 func (a *Agent) TimeoutChecker(ctx context.Context) {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	a.checkTimeout()
 
 	ticker := clock.NewTicker(20 * time.Second)
@@ -280,7 +307,7 @@ func (a *Agent) startDummyStream(ctx context.Context, pipeWrite *io.PipeWriter) 
 
 func (a *Agent) startFfmpegStreamer(ctx context.Context, pipe *io.PipeReader) {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	streamerRetryTimer := clock.NewTimer(0)
 	go func() {
 		for {
@@ -324,7 +351,7 @@ func (a *Agent) startFfmpegStreamer(ctx context.Context, pipe *io.PipeReader) {
 
 func (a *Agent) checkTimeout() {
 	b := a.Broadcaster()
-	clock := b.config.Clock
+	clock := b.Config.Clock
 	if clock.Now().After(a.Stream.ScheduledEndAt) {
 		if a.Stream.Status == stream.StatusGoneLive {
 			a.sugar.Debugw("Agent fulfilled", "streamId", a.Stream.Id)

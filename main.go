@@ -5,8 +5,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/bwmarrin/discordgo"
 	"github.com/coder/quartz"
+	"github.com/go-redsync/redsync/v4"
+	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/nicklaw5/helix/v2"
+	goredislib "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"log"
 	"net/http"
@@ -17,7 +21,9 @@ import (
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
 	"streamcatch-bot/discord"
+	"streamcatch-bot/scredis"
 )
 
 var isDev bool
@@ -33,6 +39,7 @@ func init() {
 
 func main() {
 	flag.Parse()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var logger *zap.Logger
 	var err error
@@ -44,7 +51,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
-	defer logger.Sync()
+	defer func(logger *zap.Logger) {
+		err := logger.Sync()
+		if err != nil {
+			log.Printf("failed to sync logger: %v", err)
+		}
+	}(logger)
 	sugar := logger.Sugar()
 
 	if _, err := exec.LookPath("streamlink"); err != nil {
@@ -99,6 +111,23 @@ func main() {
 		sugar.Warn("TWITCH_AUTH_TOKEN is not set")
 	}
 
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		sugar.Warn("REDIS_ADDR is not set")
+	}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	rdb := goredislib.NewClient(&goredislib.Options{
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       0,
+	})
+	pool := goredis.NewPool(rdb)
+	rs := redsync.New(pool)
+
+	var scRedisClient scredis.Client = &scredis.RealSCRedisClient{Redis: rdb, Redsync: rs}
+
+	var bot *discord.Bot
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
 		TwitchClientSecret:            twitchClientSecret,
@@ -140,10 +169,49 @@ func main() {
 				return &stream.Info{}, nil
 			}
 		},
-		Clock: quartz.NewReal(),
+		Clock:         quartz.NewReal(),
+		SCRedisClient: scRedisClient,
+		DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
+			ctx := context.Background()
+			var interaction *discordgo.Interaction
+			interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)
+			if err == nil {
+				interaction = &discordgo.Interaction{}
+				err = interaction.UnmarshalJSON([]byte(interactionJson))
+				if err != nil {
+					return nil, err
+				}
+			}
+			var message *discordgo.Message
+			messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
+			if err == nil {
+				message = &discordgo.Message{}
+				err = message.UnmarshalJSON([]byte(messageJson))
+				if err != nil {
+					return nil, err
+				}
+			}
+			var authorId string
+			authorId, err = scRedisClient.GetStreamAuthorId(ctx, s.Id)
+			if err != nil {
+				return nil, err
+			}
+
+			return &discord.RealDiscordUpdater{
+				Bot:         bot,
+				Interaction: interaction,
+				Message:     message,
+				AuthorId:    authorId,
+			}, nil
+		},
 	})
 
-	bot := discord.New(sugar, bc)
+	bot = discord.New(sugar, bc, scRedisClient)
+
+	// get streams from db and handle
+	sugar.Info("Resuming streams...")
+	bc.ResumeStreams()
+	bc.ResumeStreamPoller(ctx)
 
 	if isDev {
 		http.HandleFunc("/local/new", func(w http.ResponseWriter, r *http.Request) {
@@ -175,9 +243,13 @@ func main() {
 		}()
 	}
 
+	sugar.Info("Initialization complete.")
+
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, os.Interrupt)
 	<-sigch
+
+	cancel()
 
 	err = bot.Close()
 	if err != nil {

@@ -58,8 +58,8 @@ type TwitchStreamPlatform struct {
 	TwitchAuthToken string
 }
 
-func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
-	streamerName, err := GetTwitchStreamerNameFromUrl(stream.Url)
+func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+	streamerName, err := GetTwitchStreamerNameFromUrl(s.Url)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +90,8 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 	}
 }
 
-func (t *TwitchStreamPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
-	args := []string{"streamlink", stream.Url, "480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
+func (t *TwitchStreamPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+	args := []string{"streamlink", s.Url, "480p,360p", "--loglevel", "warning", "--twitch-low-latency", "--hls-live-restart", "--stdout"}
 	if t.TwitchAuthToken != "" {
 		args = append(args, fmt.Sprintf("--twitch-api-header=Authorization=OAuth %s", t.TwitchAuthToken))
 	}

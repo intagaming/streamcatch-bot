@@ -9,11 +9,11 @@ import (
 	"streamcatch-bot/broadcaster/stream"
 )
 
-func Streamer(ctx context.Context, platform stream.Platform, broadcaster *Broadcaster, stream *stream.Stream, pipeWrite *io.PipeWriter) error {
+func Streamer(ctx context.Context, platform stream.Platform, broadcaster *Broadcaster, s *stream.Stream, pipeWrite *io.PipeWriter) error {
 	var streamlinkErrBuf bytes.Buffer
 	var ffmpegErrBuf bytes.Buffer
 
-	err := platform.Stream(ctx, stream, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
+	err := platform.Stream(ctx, s, pipeWrite, &streamlinkErrBuf, &ffmpegErrBuf)
 	var ffmpegAndStreamlinkErrStr []byte
 
 	if streamlinkErrBuf.Len() > 0 || ffmpegErrBuf.Len() > 0 {
@@ -25,7 +25,7 @@ func Streamer(ctx context.Context, platform stream.Platform, broadcaster *Broadc
 			FfmpegError:     ffmpegErrBuf.String(),
 		})
 		if err != nil {
-			broadcaster.sugar.Panicw("Failed to marshal error", "streamId", stream.Id, "error", err)
+			broadcaster.sugar.Panicw("Failed to marshal error", "streamId", s.Id, "error", err)
 		}
 	}
 

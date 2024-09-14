@@ -2,6 +2,7 @@ package broadcaster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
@@ -9,15 +10,15 @@ import (
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
 	"os/exec"
+	"streamcatch-bot/broadcaster/bcconfig"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
+	"streamcatch-bot/scredis"
+	scredistest "streamcatch-bot/scredis/scredistest"
 	"strings"
 	"time"
-)
-
-const (
-	ScheduledEndDuration = 30 * time.Minute
 )
 
 var (
@@ -38,14 +39,16 @@ type Config struct {
 	Helix                         *helix.Client
 	StreamPlatforms               map[name.Name]stream.Platform
 	Clock                         quartz.Clock
-	StreamerInfoFetcher           func(ctx context.Context, stream *stream.Stream) (*stream.Info, error)
+	StreamerInfoFetcher           func(ctx context.Context, s *stream.Stream) (*stream.Info, error)
+	SCRedisClient                 scredis.Client
+	DiscordUpdaterCreator         func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error)
 }
 
 type Broadcaster struct {
 	sugar  *zap.SugaredLogger
 	agents map[stream.Id]*Agent
 	helix  *helix.Client
-	config *Config
+	Config *Config
 }
 
 func (b *Broadcaster) Agents() map[stream.Id]*Agent {
@@ -53,11 +56,11 @@ func (b *Broadcaster) Agents() map[stream.Id]*Agent {
 }
 
 func (b *Broadcaster) MediaServerPublishUser() string {
-	return b.config.MediaServerPublishUser
+	return b.Config.MediaServerPublishUser
 }
 
 func (b *Broadcaster) MediaServerPublishPassword() string {
-	return b.config.MediaServerPublishPassword
+	return b.Config.MediaServerPublishPassword
 }
 
 func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
@@ -65,7 +68,7 @@ func New(sugar *zap.SugaredLogger, cfg *Config) *Broadcaster {
 		sugar:  sugar,
 		agents: make(map[stream.Id]*Agent),
 		helix:  cfg.Helix,
-		config: cfg,
+		Config: cfg,
 	}
 
 	return &b
@@ -76,17 +79,23 @@ func (b *Broadcaster) MakeLocalStream(ctx context.Context, url string, listener 
 	if err != nil {
 		return nil, err
 	}
+	clock := b.Config.Clock
+	mutex := &scredistest.TestMutex{Clock: clock}
+	if err := mutex.Lock(); err != nil {
+		panic(err)
+	}
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platform.Local,
-		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+		CreatedAt:      clock.Now(),
+		ScheduledEndAt: clock.Now().Add(bcconfig.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
+		Mutex:          mutex,
 	}
 
-	info, err := b.config.StreamerInfoFetcher(ctx, &s)
+	info, err := b.Config.StreamerInfoFetcher(ctx, &s)
 	if err != nil {
 		return nil, err
 	}
@@ -122,17 +131,25 @@ func (b *Broadcaster) MakeStream(ctx context.Context, url string, listener strea
 	if err != nil {
 		return nil, err
 	}
+
+	mutex := b.Config.SCRedisClient.StreamMutex(id)
+	if err := mutex.Lock(); err != nil {
+		panic(err)
+	}
+
+	clock := b.Config.Clock
 	s := stream.Stream{
 		Id:             stream.Id(id),
 		Url:            url,
 		Platform:       platformName,
-		CreatedAt:      time.Now(),
-		ScheduledEndAt: time.Now().Add(ScheduledEndDuration),
+		CreatedAt:      clock.Now(),
+		ScheduledEndAt: clock.Now().Add(bcconfig.ScheduledEndDuration),
 		Listener:       listener,
 		Permanent:      permanent,
+		Mutex:          mutex,
 	}
 
-	info, err := b.config.StreamerInfoFetcher(ctx, &s)
+	info, err := b.Config.StreamerInfoFetcher(ctx, &s)
 	if err != nil {
 		return nil, err
 	}
@@ -152,10 +169,10 @@ func (b *Broadcaster) HandleStream(s *stream.Stream) *Agent {
 		ctxCancel: cancel,
 		Stream:    s,
 		ffmpegCmder: func(ctx context.Context) FfmpegCmder {
-			return b.config.FfmpegCmderCreator(ctx, b.config, s.Id)
+			return b.Config.FfmpegCmderCreator(ctx, b.Config, s.Id)
 		},
 		dummyStreamFfmpegCmderCreator: func(ctx context.Context) FfmpegCmder {
-			return b.config.DummyStreamFfmpegCmderCreator(ctx, s.Url)
+			return b.Config.DummyStreamFfmpegCmderCreator(ctx, s.Url)
 		},
 	}
 
@@ -179,5 +196,88 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 		return errors.New(fmt.Sprintf("Agent for streamId %v not found", streamId))
 	}
 	a.Stream.ScheduledEndAt = newScheduledEndAt
+	err := scredis.PersistStream(b.Config.SCRedisClient, a.Stream)
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+func (b *Broadcaster) ResumeStream(redisStream *scredis.RedisStream, discordUpdater streamlistener.DiscordUpdater, mutex stream.Mutex) {
+	sl := streamlistener.StreamListener{
+		Sugar:          b.sugar,
+		DiscordUpdater: discordUpdater,
+		SCRedisClient:  b.Config.SCRedisClient,
+	}
+	s := stream.Stream{
+		Id:                   stream.Id(redisStream.Id),
+		Url:                  redisStream.Url,
+		Platform:             redisStream.Platform,
+		CreatedAt:            redisStream.CreatedAt,
+		ScheduledEndAt:       redisStream.ScheduledEndAt,
+		Status:               redisStream.Status,
+		Listener:             &sl,
+		ThumbnailUrl:         redisStream.ThumbnailUrl,
+		Permanent:            redisStream.Permanent,
+		PlatformLastStreamId: redisStream.PlatformLastStreamId,
+		Mutex:                mutex,
+	}
+	b.HandleStream(&s)
+	b.sugar.Infof("Resumed stream %s", s.Id)
+}
+
+func (b *Broadcaster) ResumeStreamPoller(ctx context.Context) {
+	b.sugar.Info("ResumeStreamPoller starting")
+	clock := b.Config.Clock
+	go func() {
+		t := clock.TickerFunc(ctx, 30*time.Second, func() error {
+			b.ResumeStreams()
+			return nil
+		}, "ResumeStreamPoller")
+		err := t.Wait()
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		b.sugar.Errorf("ResumeStreamPoller errored: %v", err)
+	}()
+}
+
+func (b *Broadcaster) ResumeStreams() {
+	scRedisClient := b.Config.SCRedisClient
+	ctx := context.Background()
+	streams, err := scRedisClient.GetStreams(ctx)
+	if err != nil {
+		panic(err)
+	}
+	for streamId, streamJson := range streams {
+		// Obtain right to handle stream
+		mutex := scRedisClient.StreamMutex(streamId)
+		err := mutex.Lock()
+		if err != nil {
+			b.sugar.Debugw("Stream locked, not handling", "streamId", streamId)
+			continue
+		}
+
+		var s scredis.RedisStream
+		err = json.Unmarshal([]byte(streamJson), &s)
+		if err != nil {
+			b.sugar.Errorf("Could not unmarshal stream %s, deleting", streamId)
+			err := scRedisClient.CleanupStream(ctx, streamId)
+			if err != nil {
+				panic(err)
+			}
+			continue
+		}
+
+		discordUpdater, err := b.Config.DiscordUpdaterCreator(&s)
+		if err != nil {
+			b.sugar.Errorf("Could not create discord updater for stream %s, deleting", streamId)
+			err := scRedisClient.CleanupStream(ctx, streamId)
+			if err != nil {
+				panic(err)
+			}
+			continue
+		}
+		b.ResumeStream(&s, discordUpdater, mutex)
+	}
 }

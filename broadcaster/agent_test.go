@@ -3,6 +3,7 @@ package broadcaster
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/coder/quartz"
@@ -10,30 +11,21 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"io"
+	"streamcatch-bot/broadcaster/bcconfig"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
+	"streamcatch-bot/broadcaster/stream/streamlistener"
+	"streamcatch-bot/scredis"
+	scredistest "streamcatch-bot/scredis/scredistest"
 	"sync"
 	"testing"
 	"time"
 )
 
-type testListener struct {
-	status        stream.Status
-	closeReason   *stream.EndedReason
-	closeError    error
-	streamStarted bool
-}
+type TestDiscordUpdater struct{}
 
-func (tl *testListener) Status(stream *stream.Stream) {
-	tl.status = stream.Status
-}
-func (tl *testListener) Close(stream *stream.Stream) {
-	tl.closeReason = stream.EndedReason
-	tl.closeError = stream.EndedError
-}
-func (tl *testListener) StreamStarted(*stream.Stream) {
-	tl.streamStarted = true
+func (t *TestDiscordUpdater) UpdateStreamCatchMessage(*stream.Stream) {
 }
 
 type testFfmpegCmder struct {
@@ -96,20 +88,68 @@ func (t *testDummyStreamFfmpegCmder) Wait() error {
 }
 
 type TestTwitchPlatform struct {
-	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error)
-	stream        func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
+	waitForOnline func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error)
+	stream        func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }
 
-func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
-	return t.waitForOnline(sugar, ctx, stream)
+func (t *TestTwitchPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+	return t.waitForOnline(sugar, ctx, s)
 }
 
-func (t *TestTwitchPlatform) Stream(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
-	return t.stream(ctx, stream, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
+func (t *TestTwitchPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+	return t.stream(ctx, s, pipeWrite, streamlinkErrBuf, ffmpegErrBuf)
+}
+
+func NewTestSCRedisClient(clock quartz.Clock) scredis.Client {
+	var scRedisClient scredis.Client = &scredistest.TestSCRedisClient{
+		Clock:          clock,
+		Streams:        make(map[string]string),
+		StreamMutexMap: make(map[string]stream.Mutex),
+		StreamAuthorId: make(map[string]string),
+		StreamGuildId:  make(map[string]string),
+		GuildStreams:   make(map[string]map[string]struct{}),
+		StreamUserId:   make(map[string]string),
+		UserStreams:    make(map[string]map[string]struct{}),
+		StreamMessage:  make(map[string]string),
+	}
+	return scRedisClient
+}
+
+func GetRedisStream(t *testing.T, scRedisClient scredis.Client, streamId string) scredis.RedisStream {
+	streamJson, err := scRedisClient.GetStream(context.Background(), streamId)
+	assert.Nil(t, err)
+	var redisStream scredis.RedisStream
+	err = json.Unmarshal([]byte(streamJson), &redisStream)
+	assert.Nil(t, err)
+	return redisStream
+}
+
+func AssertRedisStreamPersisted(t *testing.T, scRedisClient scredis.Client, s *stream.Stream) {
+	streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
+	assert.Nil(t, err)
+	assert.Equal(t, streamJson, string(scredis.RedisStreamFromStream(s).Marshal()))
+}
+
+func setupTestStream(scRedisClient scredis.Client, s *stream.Stream) {
+	err := s.Mutex.Lock()
+	if err != nil {
+		panic(err)
+	}
+	ctx := context.Background()
+	err = scRedisClient.SetStream(ctx, &scredis.SetStreamData{
+		StreamId:   string(s.Id),
+		StreamJson: string(scredis.RedisStreamFromStream(s).Marshal()),
+		AuthorId:   "testAuthorId",
+		GuildId:    "testGuildId",
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestAgent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
+	sugar := logger.Sugar()
 
 	advance := func(mClock *quartz.Mock, desired time.Duration) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -168,9 +208,9 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
 		streamerData := []byte{69, 110, 105, 99, 101}
-		streamEndChan := make(chan struct{}, 1)
 		streamerRetryUntilSuccess := 2
 
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -192,11 +232,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						if streamerRetryUntilSuccess > 0 {
 							streamerRetryUntilSuccess -= 1
 							return errors.New("stream not available")
@@ -205,27 +245,32 @@ func TestAgent(t *testing.T) {
 						if err != nil {
 							return fmt.Errorf("unexpected streamer write error: %w", err)
 						}
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-streamEndChan:
-						}
-						return nil
+						<-ctx.Done()
+						return ctx.Err()
 					},
 				},
 			},
 			Clock: mClock,
 		})
-		listener := testListener{}
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
+			Mutex: &scredistest.TestMutex{
+				Clock: mClock,
+			},
 		}
+
+		setupTestStream(scRedisClient, &s)
 
 		streamPollerTrap := newStreamPollerTrap(mClock)
 		defer streamPollerTrap.Close()
@@ -235,12 +280,12 @@ func TestAgent(t *testing.T) {
 		waitForTrap(streamPollerTrap)
 
 		// expect StreamCatch stream available
-		assert.False(t, listener.streamStarted)
+		assert.False(t, s.SCStreamStarted)
 
 		streamAvailableChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 
 		// expect ffmpeg stream to receive dummy stream outputs
@@ -277,12 +322,12 @@ func TestAgent(t *testing.T) {
 		assert.Equal(t, dummyOutData, ffmpegCmderIn)
 
 		// expect StreamCatch gone online ok
-		assert.NotEqual(t, listener.status, stream.StatusGoneLive)
+		assert.NotEqual(t, stream.StatusGoneLive, s.Status)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusGoneLive
+			return s.Status == stream.StatusGoneLive
 		}, 5*time.Second)
 
 		// expect ffmpegCmder to receive stream data from Streamer
@@ -303,14 +348,14 @@ func TestAgent(t *testing.T) {
 
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
-		assert.NotEqual(t, listener.status, stream.StatusEnded)
+		assert.NotEqual(t, stream.StatusEnded, s.Status)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusEnded
+			return s.Status == stream.StatusEnded
 		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
-		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
+		assert.NotNil(t, s.EndedReason)
+		assert.Equal(t, stream.ReasonFulfilled, *s.EndedReason)
 	})
 
 	t.Run("StreamNeverCameOnline", func(t *testing.T) {
@@ -318,6 +363,7 @@ func TestAgent(t *testing.T) {
 		ffmpegCmder := &testFfmpegCmder{}
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -334,27 +380,34 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
 						return &name.WaitForOnlineData{}, errors.New("should not go here")
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
 					},
 				},
 			},
 			Clock: mClock,
 		})
-		listener := testListener{}
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
+
+		setupTestStream(scRedisClient, &s)
 
 		streamPollerTrap := newStreamPollerTrap(mClock)
 		defer streamPollerTrap.Close()
@@ -364,15 +417,15 @@ func TestAgent(t *testing.T) {
 		waitForTrap(streamPollerTrap)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusEnded
+			return s.Status == stream.StatusEnded
 		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
-		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, stream.ReasonTimeout, *listener.closeReason)
+		assert.NotNil(t, s.EndedReason)
+		assert.Equal(t, stream.ReasonTimeout, *s.EndedReason)
 	})
 
 	t.Run("StreamOnlineThenOfflineImmediatelyThenNeverCameBackOn", func(t *testing.T) {
@@ -383,6 +436,7 @@ func TestAgent(t *testing.T) {
 		streamerEndChan := make(chan struct{}, 1)
 		streamerCalledTime := 0
 
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -399,12 +453,12 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
 						if streamerCalledTime <= 1 {
 							<-streamerEndChan
@@ -415,16 +469,23 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := testListener{}
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
+
+		setupTestStream(scRedisClient, &s)
 
 		streamPollerTrap := newStreamPollerTrap(mClock)
 		defer streamPollerTrap.Close()
@@ -434,15 +495,15 @@ func TestAgent(t *testing.T) {
 		waitForTrap(streamPollerTrap)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 
-		assert.Equal(t, stream.StatusWaiting, listener.status)
+		assert.Equal(t, stream.StatusWaiting, s.Status)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusGoneLive
+			return s.Status == stream.StatusGoneLive
 		}, time.Second)
 
 		streamerEndChan <- struct{}{}
@@ -452,12 +513,12 @@ func TestAgent(t *testing.T) {
 		}, 3*time.Minute)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusEnded
+			return s.Status == stream.StatusEnded
 		}, time.Second)
 
-		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, stream.ReasonErrored, *listener.closeReason)
-		assert.Equal(t, FailedToStreamError, listener.closeError)
+		assert.NotNil(t, s.EndedReason)
+		assert.Equal(t, stream.ReasonErrored, *s.EndedReason)
+		assert.Equal(t, FailedToStreamError, s.EndedError)
 	})
 
 	t.Run("StreamOnlineThenOfflineThenCameBackOn", func(t *testing.T) {
@@ -468,6 +529,7 @@ func TestAgent(t *testing.T) {
 		streamerEndChan := make(chan struct{}, 1)
 		streamerCalledTime := 0
 
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -484,11 +546,11 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						streamerCalledTime += 1
 						<-streamerEndChan
 						return nil
@@ -497,16 +559,23 @@ func TestAgent(t *testing.T) {
 			},
 			Clock: mClock,
 		})
-		listener := testListener{}
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
+
+		setupTestStream(scRedisClient, &s)
 
 		streamPollerTrap := newStreamPollerTrap(mClock)
 		defer streamPollerTrap.Close()
@@ -516,15 +585,15 @@ func TestAgent(t *testing.T) {
 		waitForTrap(streamPollerTrap)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 
-		assert.Equal(t, stream.StatusWaiting, listener.status)
+		assert.Equal(t, stream.StatusWaiting, s.Status)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusGoneLive
+			return s.Status == stream.StatusGoneLive
 		}, time.Second)
 
 		streamerEndChan <- struct{}{}
@@ -540,11 +609,11 @@ func TestAgent(t *testing.T) {
 		}, time.Minute)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusEnded
+			return s.Status == stream.StatusEnded
 		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
-		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
+		assert.NotNil(t, s.EndedReason)
+		assert.Equal(t, stream.ReasonFulfilled, *s.EndedReason)
 	})
 
 	t.Run("StreamCameOnlineBeforeStreamCatchReady", func(t *testing.T) {
@@ -554,6 +623,7 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
 
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -575,41 +645,49 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
 					},
 				},
 			},
 			Clock: mClock,
 		})
-		listener := testListener{}
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
+
+		setupTestStream(scRedisClient, &s)
+
 		broadcaster.HandleStream(&s)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusGoneLive
+			return s.Status == stream.StatusGoneLive
 		}, 5*time.Second)
 
-		assert.False(t, listener.streamStarted)
+		assert.False(t, s.SCStreamStarted)
 
 		streamAvailableChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 
 		// We're happy if there's no runtime error so far.
@@ -622,6 +700,7 @@ func TestAgent(t *testing.T) {
 		streamAvailableChan := make(chan struct{}, 1)
 		streamGoneOnlineChan := make(chan struct{}, 1)
 
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder.ctx = ctx
@@ -644,27 +723,35 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not go here")
 					},
 				},
 			},
 			Clock: mClock,
 		})
-		listener := testListener{}
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
 			Url:            "http://TEST_URL",
 			Platform:       "twitch",
 			CreatedAt:      mClock.Now(),
-			ScheduledEndAt: mClock.Now().Add(ScheduledEndDuration),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 		}
+
+		setupTestStream(scRedisClient, &s)
+
 		agent := broadcaster.HandleStream(&s)
 
 		agent.Close(stream.ReasonForceStopped, nil)
@@ -677,12 +764,10 @@ func TestAgent(t *testing.T) {
 		var ffmpegCmder *testFfmpegCmder
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 		streamGoneOnlineChan := make(chan struct{}, 1)
-		//streamGoneOnlineIdChan := make(chan string, 1)
 		streamGoneOnlineId := "stream1"
 		streamerData := []byte{69, 110, 105, 99, 101}
-		streamEndChan := make(chan struct{}, 1)
 
-		listener := testListener{}
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder = &testFfmpegCmder{
@@ -697,33 +782,34 @@ func TestAgent(t *testing.T) {
 				return dummyFfmpegCmder
 			},
 			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
-				if listener.status == stream.StatusGoneLive {
+				if GetRedisStream(t, scRedisClient, string(streamId)).Status == stream.StatusGoneLive {
 					return true, nil
 				}
 				return false, nil
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-streamGoneOnlineChan
 						return &name.WaitForOnlineData{StreamId: streamGoneOnlineId}, nil
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						_, err := pipeWrite.Write(streamerData)
 						if err != nil {
 							return fmt.Errorf("unexpected streamer write error: %w", err)
 						}
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-streamEndChan:
-						}
-						return nil
+						<-ctx.Done()
+						return ctx.Err()
 					},
 				},
 			},
 			Clock: mClock,
 		})
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
@@ -732,35 +818,39 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
+
+		setupTestStream(scRedisClient, &s)
+
 		broadcaster.HandleStream(&s)
 
 		assert.Equal(t, time.Time{}, s.ScheduledEndAt)
 
 		// assert that stream won't be closed because timeout
 		advance(mClock, 30*time.Second)
-		assert.Nil(t, listener.closeReason)
+		assert.Nil(t, s.EndedReason)
 
 		// Stream should have not started yet
 		advance(mClock, 1*time.Minute)
-		assert.False(t, listener.streamStarted)
+		assert.False(t, s.SCStreamStarted)
 
 		// assert ffmpeg cmd not started (not sending data to media server)
 		assert.Nil(t, ffmpegCmder)
 		assert.Nil(t, dummyFfmpegCmder)
 
 		// Stream gone online
-		assert.NotEqual(t, listener.status, stream.StatusGoneLive)
+		assert.NotEqual(t, s.Status, stream.StatusGoneLive)
 
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusGoneLive
+			return s.Status == stream.StatusGoneLive
 		}, 5*time.Second)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 
 		// Make sure ScheduledEndAt is set
@@ -784,19 +874,16 @@ func TestAgent(t *testing.T) {
 
 		assert.Equal(t, streamerData, ffmpegCmderIn)
 
-		assert.NotEqual(t, listener.status, stream.StatusWaiting)
+		assert.NotEqual(t, s.Status, stream.StatusWaiting)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusWaiting
+			return s.Status == stream.StatusWaiting
 		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
 
-		assert.NotNil(t, listener.closeReason)
-		assert.Equal(t, stream.ReasonFulfilled, *listener.closeReason)
+		assert.NotNil(t, s.EndedReason)
+		assert.Equal(t, stream.ReasonFulfilled, *s.EndedReason)
 
 		assert.Equal(t, time.Time{}, s.ScheduledEndAt)
-
-		// Reset to listen on stream started again
-		listener.streamStarted = false
 
 		// make sure stream is still listening
 		advance(mClock, time.Minute)
@@ -812,11 +899,11 @@ func TestAgent(t *testing.T) {
 		streamGoneOnlineChan <- struct{}{}
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.status == stream.StatusGoneLive
+			return s.Status == stream.StatusGoneLive
 		}, 5*time.Second)
 
 		advanceUntilCond(mClock, func() bool {
-			return listener.streamStarted
+			return s.SCStreamStarted
 		}, 5*time.Second)
 	})
 
@@ -825,7 +912,7 @@ func TestAgent(t *testing.T) {
 		var ffmpegCmder *testFfmpegCmder
 		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
 
-		listener := testListener{}
+		scRedisClient := NewTestSCRedisClient(mClock)
 		broadcaster := New(logger.Sugar(), &Config{
 			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
 				ffmpegCmder = &testFfmpegCmder{
@@ -844,17 +931,22 @@ func TestAgent(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, stream *stream.Stream) (*name.WaitForOnlineData, error) {
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
 						<-ctx.Done()
 						return &name.WaitForOnlineData{}, errors.New("should not go here")
 					},
-					stream: func(ctx context.Context, stream *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return errors.New("should not be called")
 					},
 				},
 			},
 			Clock: mClock,
 		})
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
 
 		s := stream.Stream{
 			Id:             "test",
@@ -863,13 +955,215 @@ func TestAgent(t *testing.T) {
 			CreatedAt:      mClock.Now(),
 			ScheduledEndAt: time.Time{},
 			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
 			Permanent:      true,
 		}
+
+		setupTestStream(scRedisClient, &s)
+
 		a := broadcaster.HandleStream(&s)
 
 		a.Close(stream.ReasonForceStopped, nil)
 
 		assert.NotNil(t, a.ctx.Err())
 		assert.Equal(t, stream.StatusEnded, s.Status)
+	})
+
+	t.Run("PersistedCorrectly", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		ffmpegCmder := &testFfmpegCmder{}
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+		streamAvailableChan := make(chan struct{}, 1)
+		streamGoneOnlineChan := make(chan struct{}, 1)
+
+		scRedisClient := NewTestSCRedisClient(mClock)
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
+				ffmpegCmder.ctx = ctx
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
+				select {
+				case <-streamAvailableChan:
+					return true, nil
+				default:
+					return false, nil
+				}
+			},
+			StreamPlatforms: map[name.Name]stream.Platform{
+				platform.Twitch: &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+						<-streamGoneOnlineChan
+						return &name.WaitForOnlineData{}, nil
+					},
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						<-ctx.Done()
+						return ctx.Err()
+					},
+				},
+			},
+			Clock:         mClock,
+			SCRedisClient: scRedisClient,
+		})
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
+
+		s := stream.Stream{
+			Id:             "test",
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: mClock.Now().Add(bcconfig.ScheduledEndDuration),
+			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
+		}
+
+		setupTestStream(scRedisClient, &s)
+
+		streamPollerTrap := newStreamPollerTrap(mClock)
+		defer streamPollerTrap.Close()
+
+		a := broadcaster.HandleStream(&s)
+
+		waitForTrap(streamPollerTrap)
+
+		// expect StreamCatch stream available
+		assert.False(t, s.SCStreamStarted)
+
+		streamAvailableChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return s.SCStreamStarted
+		}, 5*time.Second)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return GetRedisStream(t, scRedisClient, string(s.Id)).Status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		err := broadcaster.RefreshAgent(s.Id, s.ScheduledEndAt.Add(time.Hour))
+		assert.Nil(t, err)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		a.Close(stream.ReasonForceStopped, nil)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusEnded
+		}, 5*time.Second)
+
+		streamJson, err := scRedisClient.GetStream(context.Background(), string(s.Id))
+		assert.Nil(t, err)
+		assert.Empty(t, streamJson)
+	})
+
+	t.Run("PermanentStreamPersistedCorrectly", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		var ffmpegCmder *testFfmpegCmder
+		var dummyFfmpegCmder *testDummyStreamFfmpegCmder
+		streamGoneOnlineChan := make(chan struct{}, 1)
+		streamGoneOnlineId := "stream1"
+
+		scRedisClient := NewTestSCRedisClient(mClock)
+		broadcaster := New(logger.Sugar(), &Config{
+			FfmpegCmderCreator: func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder {
+				ffmpegCmder = &testFfmpegCmder{
+					ctx: ctx,
+				}
+				return ffmpegCmder
+			},
+			DummyStreamFfmpegCmderCreator: func(ctx context.Context, streamUrl string) FfmpegCmder {
+				dummyFfmpegCmder = &testDummyStreamFfmpegCmder{
+					ctx: ctx,
+				}
+				return dummyFfmpegCmder
+			},
+			StreamAvailableChecker: func(streamId stream.Id) (bool, error) {
+				if GetRedisStream(t, scRedisClient, string(streamId)).Status == stream.StatusGoneLive {
+					return true, nil
+				}
+				return false, nil
+			},
+			StreamPlatforms: map[name.Name]stream.Platform{
+				platform.Twitch: &TestTwitchPlatform{
+					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+						<-streamGoneOnlineChan
+						return &name.WaitForOnlineData{StreamId: streamGoneOnlineId}, nil
+					},
+					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					},
+				},
+			},
+			Clock: mClock,
+		})
+		listener := streamlistener.StreamListener{
+			Sugar:          sugar,
+			DiscordUpdater: &TestDiscordUpdater{},
+			SCRedisClient:  scRedisClient,
+		}
+
+		s := stream.Stream{
+			Id:             "test",
+			Url:            "http://TEST_URL",
+			Platform:       "twitch",
+			CreatedAt:      mClock.Now(),
+			ScheduledEndAt: time.Time{},
+			Listener:       &listener,
+			Mutex:          &scredistest.TestMutex{Clock: mClock},
+			Permanent:      true,
+		}
+
+		setupTestStream(scRedisClient, &s)
+
+		broadcaster.HandleStream(&s)
+
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.SCStreamStarted
+		}, 5*time.Second)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusWaiting
+		}, s.ScheduledEndAt.Sub(mClock.Now())+time.Minute)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
+
+		advance(mClock, time.Minute)
+
+		streamGoneOnlineId = "stream2"
+		streamGoneOnlineChan <- struct{}{}
+
+		advanceUntilCond(mClock, func() bool {
+			return s.Status == stream.StatusGoneLive
+		}, 5*time.Second)
+
+		advanceUntilCond(mClock, func() bool {
+			return s.SCStreamStarted
+		}, 5*time.Second)
+
+		AssertRedisStreamPersisted(t, scRedisClient, &s)
 	})
 }
