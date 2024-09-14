@@ -173,9 +173,8 @@ func main() {
 		ctx := context.Background()
 		var interaction *discordgo.Interaction
 		interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)
-		// TODO: check empty string?
-		sugar.Debugw("interactionJson", "iJs", interactionJson)
 		if err == nil {
+			interaction = &discordgo.Interaction{}
 			err = interaction.UnmarshalJSON([]byte(interactionJson))
 			if err != nil {
 				return nil, err
@@ -184,6 +183,7 @@ func main() {
 		var message *discordgo.Message
 		messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
 		if err == nil {
+			message = &discordgo.Message{}
 			err = message.UnmarshalJSON([]byte(messageJson))
 			if err != nil {
 				return nil, err

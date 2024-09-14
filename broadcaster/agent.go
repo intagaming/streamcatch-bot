@@ -54,6 +54,9 @@ func (a *Agent) Run() {
 			return err
 		}, "StreamMutexExtender")
 		err := t.Wait()
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		if err != nil {
 			a.sugar.Errorf("Error extending stream mutex: %v", err)
 		}

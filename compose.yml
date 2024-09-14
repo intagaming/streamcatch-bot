@@ -20,7 +20,7 @@ services:
       - MEDIA_SERVER_PUBLISH_USER=${MEDIA_SERVER_PUBLISH_USER}
       - MEDIA_SERVER_PUBLISH_PASSWORD=${MEDIA_SERVER_PUBLISH_PASSWORD}
       - MEDIA_SERVER_API_URL=http://mediaserver:9997
-      - REDIS_ADDR=redis
+      - REDIS_ADDR=redis:6379
       - REDIS_PASSWORD=
     networks:
       - streamcatch
@@ -40,6 +40,8 @@ services:
 
   redis:
     image: bitnami/redis:6.2
+    ports:
+      - "6379:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     networks:

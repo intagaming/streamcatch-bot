@@ -2,6 +2,7 @@ package sc_redis
 
 import (
 	"context"
+	"errors"
 	"github.com/go-redsync/redsync/v4"
 	"github.com/redis/go-redis/v9"
 	"streamcatch-bot/broadcaster/stream"
@@ -73,17 +74,38 @@ func (r *RealSCRedisClient) SetStream(ctx context.Context, data *SetStreamData) 
 }
 
 func (r *RealSCRedisClient) CleanupStream(ctx context.Context, streamId string) error {
+	var streamGuildGetCmd *redis.StringCmd
+	var streamUserGetCmd *redis.StringCmd
 	_, err := r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		streamGuild := pipe.Get(ctx, StreamGuildKey+streamId).Val()
-		streamUser := pipe.Get(ctx, StreamUserKey+streamId).Val()
-
-		pipe.HDel(ctx, StreamsKey, streamId)
-		pipe.Del(ctx, StreamDiscordMessageKey+streamId)
-		pipe.Del(ctx, StreamDiscordAuthorIdKey+streamId)
-		pipe.SRem(ctx, GuildStreamsKey+streamGuild, streamId)
-		pipe.SRem(ctx, UserStreamsKey+streamUser, streamId)
+		streamGuildGetCmd = pipe.Get(ctx, StreamGuildKey+streamId)
+		streamUserGetCmd = pipe.Get(ctx, StreamUserKey+streamId)
 		return nil
 	})
+	if !errors.Is(err, redis.Nil) {
+		return err
+	}
+
+	streamGuild := streamGuildGetCmd.Val()
+	streamUser := streamUserGetCmd.Val()
+
+	_, err = r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.HDel(ctx, StreamsKey, streamId)
+		pipe.Del(ctx, StreamDiscordInteractionKey+streamId)
+		pipe.Del(ctx, StreamDiscordMessageKey+streamId)
+		pipe.Del(ctx, StreamDiscordAuthorIdKey+streamId)
+		if streamGuild != "" {
+			pipe.Del(ctx, StreamGuildKey+streamId)
+			pipe.SRem(ctx, GuildStreamsKey+streamGuild, streamId)
+		}
+		if streamUser != "" {
+			pipe.Del(ctx, StreamUserKey+streamId)
+			pipe.SRem(ctx, UserStreamsKey+streamUser, streamId)
+		}
+		return nil
+	})
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
 	return err
 }
 
@@ -95,7 +117,6 @@ func (r *RealSCRedisClient) GetStreamMessage(ctx context.Context, streamId strin
 	return r.Redis.Get(ctx, StreamDiscordMessageKey+streamId).Result()
 }
 
-// TODO: use this
 func (r *RealSCRedisClient) SetStreamMessage(ctx context.Context, streamId string, messageJson string) error {
 	return r.Redis.Set(ctx, StreamDiscordMessageKey+streamId, messageJson, 0).Err()
 }
