@@ -43,6 +43,12 @@ func (a *Agent) Broadcaster() *Broadcaster {
 func (a *Agent) Run() {
 	a.sugar.Debugw("Agent running", "stream", a.Stream)
 
+	// If stream timed out, don't run further.
+	a.checkTimeout()
+	if a.ctx.Err() != nil {
+		return
+	}
+
 	// TODO: properly resume stream. For now, make it work like a new stream.
 	a.Stream.Status = stream.StatusWaiting
 	a.Stream.PlatformLastStreamId = nil
