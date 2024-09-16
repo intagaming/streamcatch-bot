@@ -16,7 +16,8 @@ type SetStreamData struct {
 }
 
 type Client interface {
-	GetStreams(ctx context.Context) (map[string]string, error)
+	GetAllStreams(ctx context.Context) (map[string]string, error)
+	GetStreams(ctx context.Context, ids []string) (map[string]string, error)
 	GetStream(ctx context.Context, streamId string) (string, error)
 	SetStream(ctx context.Context, data *SetStreamData) error
 	SetStreamJson(ctx context.Context, streamId string, streamJson string) error
@@ -37,6 +38,21 @@ type RealClient struct {
 	Redsync *redsync.Redsync
 }
 
+func (r *RealClient) GetStreams(ctx context.Context, ids []string) (map[string]string, error) {
+	var streams = make(map[string]string, len(ids))
+	_, err := r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		for _, id := range ids {
+			data := pipe.HGet(ctx, StreamsKey, id).Val()
+			streams[id] = data
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+	return streams, nil
+}
+
 func (r *RealClient) GetStreamChannelID(ctx context.Context, streamId string) (string, error) {
 	return r.Redis.Get(ctx, StreamDiscordChannelIDKey+streamId).Result()
 }
@@ -49,7 +65,7 @@ func (r *RealClient) SetStreamJson(ctx context.Context, streamId string, streamJ
 	return r.Redis.HSet(ctx, StreamsKey, streamId, streamJson).Err()
 }
 
-func (r *RealClient) GetStreams(ctx context.Context) (map[string]string, error) {
+func (r *RealClient) GetAllStreams(ctx context.Context) (map[string]string, error) {
 	return r.Redis.HGetAll(ctx, StreamsKey).Result()
 }
 

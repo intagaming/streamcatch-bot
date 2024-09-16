@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
@@ -294,66 +295,83 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 	switch options[0].Name {
 	case "list-permanent":
-		// TODO: defer discord response
-		var streams []string
+		err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		})
+		if err != nil {
+			bot.sugar.Errorf("could not respond to interaction: %s", err)
+		}
+		var streamIds []string
 		ctx := context.Background()
-		var err error
 		if i.Member != nil {
-			streams, err = bot.scRedisClient.GetGuildStreams(ctx, i.GuildID)
+			streamIds, err = bot.scRedisClient.GetGuildStreams(ctx, i.GuildID)
 		} else {
-			streams, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
+			streamIds, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
 		}
 		if err != nil {
 			bot.sugar.Errorf("could not get stream list: %v", err)
-			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "An error occurred.",
-				},
+			content := "An error occurred."
+			_, err := bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
 			})
 			if err != nil {
-				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				bot.sugar.Errorf("Failed to edit interaction: %v", err)
 			}
 			return
 		}
-		if len(streams) == 0 {
-			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "No permanent streams found.",
-				},
+		if len(streamIds) == 0 {
+			content := "No permanent streams found."
+			_, err := bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
 			})
 			if err != nil {
-				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				bot.sugar.Errorf("Failed to edit interaction: %v", err)
+			}
+			return
+		}
+
+		streams, err := bot.scRedisClient.GetStreams(ctx, streamIds)
+		if err != nil {
+			bot.sugar.Errorf("could not get streams: %v", err)
+			content := "An error occurred."
+			_, err := bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
+			})
+			if err != nil {
+				bot.sugar.Errorf("Failed to edit interaction: %v", err)
 			}
 			return
 		}
 
 		contentSb := strings.Builder{}
-		contentSb.Write([]byte("Here are permanent streams that you scheduled:\n"))
-		for _, streamId := range streams {
-			a, ok := bot.broadcaster.Agents()[stream.Id(streamId)]
+		contentSb.Write([]byte("Here are the permanent streams that you've scheduled:\n"))
+		for _, streamId := range streamIds {
+			streamJson, ok := streams[streamId]
 			if !ok {
-				bot.sugar.Errorf("Cannot find agent from stream %s", streamId)
+				panic(fmt.Sprintf("could not find stream %s", streamId))
+			}
+
+			var redisStream scredis.RedisStream
+			err = json.Unmarshal([]byte(streamJson), &redisStream)
+			if err != nil {
+				bot.sugar.Errorf("Could not parse redis stream %s", streamId)
 				continue
 			}
-			if !a.Stream.Permanent {
+			if !redisStream.Permanent {
 				continue
 			}
-			contentSb.Write([]byte(fmt.Sprintf("- Stream ID: `%s`; URL: %s\n", streamId, a.Stream.Url)))
+			contentSb.Write([]byte(fmt.Sprintf("- Stream ID: `%s`; URL: %s\n", streamId, redisStream.Url)))
 		}
 
-		err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: contentSb.String(),
-				Flags:   discordgo.MessageFlagsSuppressEmbeds,
-			},
+		content := contentSb.String()
+		_, err = bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &content,
 		})
 		if err != nil {
-			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+			bot.sugar.Errorf("Failed to edit interaction: %v", err)
 		}
 	case "cancel-all-permanent":
+		// TODO: defer response
 		var streams []string
 		ctx := context.Background()
 		var err error
@@ -388,6 +406,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			return
 		}
 
+		// TODO: fix for sharding
 		for _, streamId := range streams {
 			a, ok := bot.broadcaster.Agents()[stream.Id(streamId)]
 			if !ok {

@@ -245,7 +245,7 @@ func (b *Broadcaster) ResumeStreamPoller(ctx context.Context) {
 func (b *Broadcaster) ResumeStreams() {
 	scRedisClient := b.Config.SCRedisClient
 	ctx := context.Background()
-	streams, err := scRedisClient.GetStreams(ctx)
+	streams, err := scRedisClient.GetAllStreams(ctx)
 	if err != nil {
 		panic(err)
 	}

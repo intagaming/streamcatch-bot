@@ -23,6 +23,16 @@ type TestSCRedisClient struct {
 	StreamChannelID map[string]string
 }
 
+func (t *TestSCRedisClient) GetStreams(_ context.Context, ids []string) (map[string]string, error) {
+	var streams = make(map[string]string, len(ids))
+	for _, id := range ids {
+		if data, ok := t.Streams[id]; ok {
+			streams[id] = data
+		}
+	}
+	return streams, nil
+}
+
 func (t *TestSCRedisClient) GetStreamChannelID(_ context.Context, streamId string) (string, error) {
 	return t.StreamChannelID[streamId], nil
 }
@@ -37,7 +47,7 @@ func (t *TestSCRedisClient) SetStreamJson(_ context.Context, streamId string, st
 	return nil
 }
 
-func (t *TestSCRedisClient) GetStreams(context.Context) (map[string]string, error) {
+func (t *TestSCRedisClient) GetAllStreams(context.Context) (map[string]string, error) {
 	return t.Streams, nil
 }
 
