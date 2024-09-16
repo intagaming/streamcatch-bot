@@ -125,7 +125,7 @@ func main() {
 	pool := goredis.NewPool(rdb)
 	rs := redsync.New(pool)
 
-	var scRedisClient scredis.Client = &scredis.RealSCRedisClient{Redis: rdb, Redsync: rs}
+	var scRedisClient scredis.Client = &scredis.RealClient{Redis: rdb, Redsync: rs}
 
 	var bot *discord.Bot
 	bc := broadcaster.New(sugar, &broadcaster.Config{
@@ -173,14 +173,9 @@ func main() {
 		SCRedisClient: scRedisClient,
 		DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 			ctx := context.Background()
-			var interaction *discordgo.Interaction
-			interactionJson, err := scRedisClient.GetStreamInteraction(ctx, s.Id)
-			if err == nil {
-				interaction = &discordgo.Interaction{}
-				err = interaction.UnmarshalJSON([]byte(interactionJson))
-				if err != nil {
-					return nil, err
-				}
+			channelID, err := scRedisClient.GetStreamChannelID(ctx, s.Id)
+			if err != nil {
+				return nil, err
 			}
 			var message *discordgo.Message
 			messageJson, err := scRedisClient.GetStreamMessage(ctx, s.Id)
@@ -198,10 +193,10 @@ func main() {
 			}
 
 			return &discord.RealDiscordUpdater{
-				Bot:         bot,
-				Interaction: interaction,
-				Message:     message,
-				AuthorId:    authorId,
+				Bot:       bot,
+				ChannelID: channelID,
+				Message:   message,
+				AuthorId:  authorId,
 			}, nil
 		},
 	})

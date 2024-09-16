@@ -22,8 +22,8 @@ type Client interface {
 	SetStreamJson(ctx context.Context, streamId string, streamJson string) error
 	CleanupStream(ctx context.Context, streamId string) error
 	StreamMutex(streamId string) stream.Mutex
-	GetStreamInteraction(ctx context.Context, streamId string) (string, error)
-	SetStreamInteraction(ctx context.Context, streamId string, interactionString string) error
+	GetStreamChannelID(ctx context.Context, streamId string) (string, error)
+	SetStreamChannelID(ctx context.Context, streamId string, channelId string) error
 	GetStreamMessage(ctx context.Context, streamId string) (string, error)
 	SetStreamMessage(ctx context.Context, streamId string, messageJson string) error
 	GetStreamAuthorId(ctx context.Context, streamId string) (string, error)
@@ -32,32 +32,32 @@ type Client interface {
 	GetUserStreams(ctx context.Context, userId string) ([]string, error)
 }
 
-type RealSCRedisClient struct {
+type RealClient struct {
 	Redis   *redis.Client
 	Redsync *redsync.Redsync
 }
 
-func (r *RealSCRedisClient) GetStreamInteraction(ctx context.Context, streamId string) (string, error) {
-	return r.Redis.Get(ctx, StreamDiscordInteractionKey+streamId).Result()
+func (r *RealClient) GetStreamChannelID(ctx context.Context, streamId string) (string, error) {
+	return r.Redis.Get(ctx, StreamDiscordChannelIDKey+streamId).Result()
 }
 
-func (r *RealSCRedisClient) SetStreamInteraction(ctx context.Context, streamId string, interactionString string) error {
-	return r.Redis.Set(ctx, StreamDiscordInteractionKey+streamId, interactionString, 0).Err()
+func (r *RealClient) SetStreamChannelID(ctx context.Context, streamId string, channelId string) error {
+	return r.Redis.Set(ctx, StreamDiscordChannelIDKey+streamId, channelId, 0).Err()
 }
 
-func (r *RealSCRedisClient) SetStreamJson(ctx context.Context, streamId string, streamJson string) error {
+func (r *RealClient) SetStreamJson(ctx context.Context, streamId string, streamJson string) error {
 	return r.Redis.HSet(ctx, StreamsKey, streamId, streamJson).Err()
 }
 
-func (r *RealSCRedisClient) GetStreams(ctx context.Context) (map[string]string, error) {
+func (r *RealClient) GetStreams(ctx context.Context) (map[string]string, error) {
 	return r.Redis.HGetAll(ctx, StreamsKey).Result()
 }
 
-func (r *RealSCRedisClient) GetStream(ctx context.Context, streamId string) (string, error) {
+func (r *RealClient) GetStream(ctx context.Context, streamId string) (string, error) {
 	return r.Redis.HGet(ctx, StreamsKey, streamId).Result()
 }
 
-func (r *RealSCRedisClient) SetStream(ctx context.Context, data *SetStreamData) error {
+func (r *RealClient) SetStream(ctx context.Context, data *SetStreamData) error {
 	_, err := r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.HSet(ctx, StreamsKey, data.StreamId, data.StreamJson)
 		pipe.Set(ctx, StreamDiscordAuthorIdKey+data.StreamId, data.AuthorId, 0)
@@ -73,7 +73,7 @@ func (r *RealSCRedisClient) SetStream(ctx context.Context, data *SetStreamData) 
 	return err
 }
 
-func (r *RealSCRedisClient) CleanupStream(ctx context.Context, streamId string) error {
+func (r *RealClient) CleanupStream(ctx context.Context, streamId string) error {
 	var streamGuildGetCmd *redis.StringCmd
 	var streamUserGetCmd *redis.StringCmd
 	_, err := r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
@@ -90,7 +90,7 @@ func (r *RealSCRedisClient) CleanupStream(ctx context.Context, streamId string) 
 
 	_, err = r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.HDel(ctx, StreamsKey, streamId)
-		pipe.Del(ctx, StreamDiscordInteractionKey+streamId)
+		pipe.Del(ctx, StreamDiscordChannelIDKey+streamId)
 		pipe.Del(ctx, StreamDiscordMessageKey+streamId)
 		pipe.Del(ctx, StreamDiscordAuthorIdKey+streamId)
 		if streamGuild != "" {
@@ -109,31 +109,31 @@ func (r *RealSCRedisClient) CleanupStream(ctx context.Context, streamId string) 
 	return err
 }
 
-func (r *RealSCRedisClient) StreamMutex(streamId string) stream.Mutex {
+func (r *RealClient) StreamMutex(streamId string) stream.Mutex {
 	return r.Redsync.NewMutex(StreamLockKey+streamId, redsync.WithExpiry(MutexDuration), redsync.WithTries(1))
 }
 
-func (r *RealSCRedisClient) GetStreamMessage(ctx context.Context, streamId string) (string, error) {
+func (r *RealClient) GetStreamMessage(ctx context.Context, streamId string) (string, error) {
 	return r.Redis.Get(ctx, StreamDiscordMessageKey+streamId).Result()
 }
 
-func (r *RealSCRedisClient) SetStreamMessage(ctx context.Context, streamId string, messageJson string) error {
+func (r *RealClient) SetStreamMessage(ctx context.Context, streamId string, messageJson string) error {
 	return r.Redis.Set(ctx, StreamDiscordMessageKey+streamId, messageJson, 0).Err()
 }
 
-func (r *RealSCRedisClient) GetStreamAuthorId(ctx context.Context, streamId string) (string, error) {
+func (r *RealClient) GetStreamAuthorId(ctx context.Context, streamId string) (string, error) {
 	return r.Redis.Get(ctx, StreamDiscordAuthorIdKey+streamId).Result()
 }
 
-func (r *RealSCRedisClient) SetStreamAuthorId(ctx context.Context, streamId string, authorId string) error {
+func (r *RealClient) SetStreamAuthorId(ctx context.Context, streamId string, authorId string) error {
 	return r.Redis.Set(ctx, StreamDiscordAuthorIdKey+streamId, authorId, 0).Err()
 }
 
-func (r *RealSCRedisClient) GetGuildStreams(ctx context.Context, guildId string) ([]string, error) {
+func (r *RealClient) GetGuildStreams(ctx context.Context, guildId string) ([]string, error) {
 	return r.Redis.SMembers(ctx, GuildStreamsKey+guildId).Result()
 }
 
-func (r *RealSCRedisClient) GetUserStreams(ctx context.Context, userId string) ([]string, error) {
+func (r *RealClient) GetUserStreams(ctx context.Context, userId string) ([]string, error) {
 	return r.Redis.SMembers(ctx, UserStreamsKey+userId).Result()
 }
 

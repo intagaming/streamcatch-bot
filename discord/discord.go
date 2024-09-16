@@ -2,7 +2,6 @@ package discord
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
@@ -205,10 +204,10 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 	sl := streamlistener.StreamListener{
 		Sugar: bot.sugar,
 		DiscordUpdater: &RealDiscordUpdater{
-			Bot:         bot,
-			Interaction: i,
-			Message:     nil,
-			AuthorId:    interactionAuthor(i).ID,
+			Bot:       bot,
+			ChannelID: i.ChannelID,
+			Message:   nil,
+			AuthorId:  interactionAuthor(i).ID,
 		},
 		SCRedisClient: bot.scRedisClient,
 	}
@@ -237,11 +236,7 @@ func (bot *Bot) newStreamCatch(i *discordgo.Interaction, url string, permanent b
 		// TODO: handle err
 		panic(err)
 	}
-	interactionJson, err := json.Marshal(i)
-	if err != nil {
-		panic(err)
-	}
-	err = bot.scRedisClient.SetStreamInteraction(ctx, string(s.Id), string(interactionJson))
+	err = bot.scRedisClient.SetStreamChannelID(ctx, string(s.Id), i.ChannelID)
 	if err != nil {
 		// TODO: handle err
 		panic(err)

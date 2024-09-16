@@ -11,7 +11,7 @@ import (
 
 type RealDiscordUpdater struct {
 	Bot          *Bot
-	Interaction  *discordgo.Interaction
+	ChannelID    string
 	Message      *discordgo.Message
 	MessageMutex sync.Mutex
 	AuthorId     string
@@ -46,11 +46,11 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 		if err != nil {
 			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
 		}
-	} else if r.Interaction != nil {
-		discordMsg, err := r.Bot.session.FollowupMessageCreate(r.Interaction, true, &discordgo.WebhookParams{
+	} else {
+		discordMsg, err := r.Bot.session.ChannelMessageSendComplex(r.ChannelID, &discordgo.MessageSend{
 			Content:    content,
-			Components: msg.Components,
 			Embeds:     msg.Embeds,
+			Components: msg.Components,
 		})
 		if err != nil {
 			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
