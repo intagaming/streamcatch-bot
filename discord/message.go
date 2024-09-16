@@ -112,6 +112,14 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 		}
 	}
 
+	var componentsToSend []discordgo.MessageComponent
+	if components != nil {
+		componentsToSend = []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: components,
+			},
+		}
+	}
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
 			{
@@ -133,11 +141,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 				},
 			},
 		},
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: components,
-			},
-		},
+		Components: componentsToSend,
 	}
 }
 

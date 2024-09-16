@@ -58,6 +58,7 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 		})
 		if err != nil {
 			r.Bot.sugar.Errorf("could not send status to discord: %v", err)
+			return
 		}
 		r.Message = discordMsg
 		msgJson, err := json.Marshal(discordMsg)
