@@ -261,7 +261,7 @@ func (b *Broadcaster) ResumeStreams() {
 		var s scredis.RedisStream
 		err = json.Unmarshal([]byte(streamJson), &s)
 		if err != nil {
-			b.sugar.Errorf("Could not unmarshal stream %s, deleting", streamId)
+			b.sugar.Errorf("Could not unmarshal stream %s, deleting. Error: %v", streamId, err)
 			err := scRedisClient.CleanupStream(ctx, streamId)
 			if err != nil {
 				panic(err)
@@ -271,7 +271,7 @@ func (b *Broadcaster) ResumeStreams() {
 
 		discordUpdater, err := b.Config.DiscordUpdaterCreator(&s)
 		if err != nil {
-			b.sugar.Errorf("Could not create discord updater for stream %s, deleting", streamId)
+			b.sugar.Errorf("Could not create discord updater for stream %s, deleting. Error: %v", streamId, err)
 			err := scRedisClient.CleanupStream(ctx, streamId)
 			if err != nil {
 				panic(err)
