@@ -24,7 +24,11 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 	var msg *StreamMessageContent
 	switch s.Status {
 	case stream.StatusWaiting:
-		msg = r.Bot.MakeStreamStartedMessage(s)
+		if s.EndedReason != nil {
+			msg = r.Bot.MakeStreamEndedMessage(s)
+		} else {
+			msg = r.Bot.MakeStreamStartedMessage(s)
+		}
 	case stream.StatusGoneLive:
 		msg = r.Bot.MakeStreamGoneLiveMessage(s)
 	case stream.StatusEnded:
