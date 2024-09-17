@@ -72,9 +72,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	var recordLink string
 	var err error
 	switch *s.EndedReason {
-	case stream.ReasonStreamEnded:
-	case stream.ReasonFulfilled:
-	case stream.ReasonForceStopped:
+	case stream.ReasonStreamEnded, stream.ReasonFulfilled, stream.ReasonForceStopped:
 		if s.PlatformLastStreamId == nil {
 			break
 		}
@@ -113,7 +111,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	}
 
 	var componentsToSend []discordgo.MessageComponent
-	if components != nil {
+	if len(components) > 0 {
 		componentsToSend = append(componentsToSend, discordgo.ActionsRow{
 			Components: components,
 		})
