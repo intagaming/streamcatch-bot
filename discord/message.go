@@ -63,6 +63,8 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 		} else {
 			descSb.WriteString("The permanent stream catch has been stopped by the user.")
 		}
+	case stream.ReasonStopOneInstance:
+		descSb.WriteString("The stream catch has been stopped by the user. Future streams from this streamer will continue to be catch.")
 	case stream.ReasonErrored:
 		descSb.WriteString("An error has occurred.")
 	default:

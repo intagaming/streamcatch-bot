@@ -98,7 +98,13 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 					}
 					return
 				}
-				a.Close(stream.ReasonForceStopped, nil)
+				var reason stream.EndedReason
+				if a.Stream.Permanent {
+					reason = stream.ReasonStopOneInstance
+				} else {
+					reason = stream.ReasonForceStopped
+				}
+				a.Close(reason, nil)
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,
 				})

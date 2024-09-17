@@ -48,11 +48,14 @@ const (
 type EndedReason int
 
 const (
+	// ReasonForceStopped ends the whole stream catch, be it a permanent stream catch or not.
 	ReasonForceStopped EndedReason = iota
 	ReasonTimeout
 	ReasonStreamEnded
 	ReasonFulfilled
 	ReasonErrored
+	// ReasonStopOneInstance ends one instance of the permanent stream catch.
+	ReasonStopOneInstance
 )
 
 type StatusListener interface {
