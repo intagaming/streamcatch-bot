@@ -109,6 +109,14 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 					CustomID: fmt.Sprintf("permanent_recatch_%s", s.Url),
 				},
 			)
+		} else {
+			components = append(components,
+				discordgo.Button{
+					Label:    "Cancel all",
+					Style:    discordgo.DangerButton,
+					CustomID: fmt.Sprintf("force_stop_%s", s.Id),
+				},
+			)
 		}
 	}
 
@@ -277,6 +285,17 @@ func (bot *Bot) MakeRequestReceivedMessage(s *stream.Stream) *StreamMessageConte
 						Name:   "Permanent?",
 						Value:  isPermanentStr,
 						Inline: true,
+					},
+				},
+			},
+		},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label:    "Cancel",
+						Style:    discordgo.DangerButton,
+						CustomID: fmt.Sprintf("force_stop_%s", s.Id),
 					},
 				},
 			},

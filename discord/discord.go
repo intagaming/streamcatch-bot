@@ -99,12 +99,39 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 					return
 				}
 				var reason stream.EndedReason
-				if a.Stream.Permanent {
+				if a.Stream.Permanent && a.Stream.Status == stream.StatusGoneLive {
 					reason = stream.ReasonStopOneInstance
 				} else {
 					reason = stream.ReasonForceStopped
 				}
 				a.Close(reason, nil)
+				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseDeferredMessageUpdate,
+				})
+				if err != nil {
+					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				}
+			case strings.HasPrefix(customID, "force_stop_"):
+				streamId := stream.Id(strings.TrimPrefix(customID, "force_stop_"))
+				author := interactionAuthor(i.Interaction)
+				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+					return
+				}
+				a, ok := bot.broadcaster.Agents()[streamId]
+				if !ok {
+					bot.sugar.Debugw("Agent not found", "streamId", streamId)
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "The stream is not available anymore.",
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+					}
+					return
+				}
+				a.Close(stream.ReasonForceStopped, nil)
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,
 				})
@@ -287,7 +314,7 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, author *discordgo.User) bool {
 	streamAuthorId, err := bot.scRedisClient.GetStreamAuthorId(context.Background(), string(streamId))
 	if err != nil {
-		bot.sugar.Errorf("could not get stream author id: %v", err)
+		bot.sugar.Errorf("could not get stream author id for stream %s: %v", streamId, err)
 		return false
 	}
 	if streamAuthorId != author.ID {
