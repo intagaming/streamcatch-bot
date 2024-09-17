@@ -49,9 +49,13 @@ func (a *Agent) Run() {
 		return
 	}
 
-	// TODO: properly resume stream. For now, make it work like a new stream.
+	// TODO: properly resume stream. Involves changing the HandleOneStreamInstance logic.
+	//  For now, make it work like a new stream.
+	// If a permanent stream resumes and is not Waiting, then catch the same stream session again.
+	if a.Stream.Permanent && a.Stream.Status != stream.StatusWaiting {
+		a.Stream.PlatformLastStreamId = nil
+	}
 	a.Stream.Status = stream.StatusWaiting
-	a.Stream.PlatformLastStreamId = nil
 
 	clock := a.Broadcaster().Config.Clock
 	go func() {
