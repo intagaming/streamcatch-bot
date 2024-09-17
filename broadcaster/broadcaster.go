@@ -215,6 +215,7 @@ func (b *Broadcaster) ResumeStream(redisStream *scredis.RedisStream, discordUpda
 		Platform:             redisStream.Platform,
 		CreatedAt:            redisStream.CreatedAt,
 		ScheduledEndAt:       redisStream.ScheduledEndAt,
+		LastStatus:           redisStream.LastStatus,
 		Status:               redisStream.Status,
 		Listener:             &sl,
 		ThumbnailUrl:         redisStream.ThumbnailUrl,

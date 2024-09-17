@@ -63,6 +63,8 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 		} else {
 			descSb.WriteString("The permanent stream catch has been stopped by the user.")
 		}
+	case stream.ReasonStopOneInstance:
+		descSb.WriteString("The stream catch has been stopped by the user. Future streams from this streamer will continue to be catch.")
 	case stream.ReasonErrored:
 		descSb.WriteString("An error has occurred.")
 	default:
@@ -72,10 +74,8 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	var recordLink string
 	var err error
 	switch *s.EndedReason {
-	case stream.ReasonStreamEnded:
-	case stream.ReasonFulfilled:
-	case stream.ReasonForceStopped:
-		if s.PlatformLastStreamId == nil {
+	case stream.ReasonStreamEnded, stream.ReasonFulfilled, stream.ReasonForceStopped, stream.ReasonStopOneInstance:
+		if s.PlatformLastStreamId == nil || s.LastStatus == stream.StatusWaiting {
 			break
 		}
 		recordLink, err = bot.GetPlaybackURL(s)
@@ -109,16 +109,22 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 					CustomID: fmt.Sprintf("permanent_recatch_%s", s.Url),
 				},
 			)
+		} else {
+			components = append(components,
+				discordgo.Button{
+					Label:    "Cancel all",
+					Style:    discordgo.DangerButton,
+					CustomID: fmt.Sprintf("force_stop_%s", s.Id),
+				},
+			)
 		}
 	}
 
 	var componentsToSend []discordgo.MessageComponent
-	if components != nil {
-		componentsToSend = []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: components,
-			},
-		}
+	if len(components) > 0 {
+		componentsToSend = append(componentsToSend, discordgo.ActionsRow{
+			Components: components,
+		})
 	}
 	return &StreamMessageContent{
 		Embeds: []*discordgo.MessageEmbed{
@@ -279,6 +285,17 @@ func (bot *Bot) MakeRequestReceivedMessage(s *stream.Stream) *StreamMessageConte
 						Name:   "Permanent?",
 						Value:  isPermanentStr,
 						Inline: true,
+					},
+				},
+			},
+		},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label:    "Cancel",
+						Style:    discordgo.DangerButton,
+						CustomID: fmt.Sprintf("force_stop_%s", s.Id),
 					},
 				},
 			},

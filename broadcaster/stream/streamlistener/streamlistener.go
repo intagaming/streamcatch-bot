@@ -21,8 +21,7 @@ func (sl *StreamListener) Status(s *stream.Stream) {
 	sl.DiscordUpdater.UpdateStreamCatchMessage(s)
 }
 
-func (sl *StreamListener) StreamStarted(s *stream.Stream) {
-	sl.DiscordUpdater.UpdateStreamCatchMessage(s)
+func (sl *StreamListener) StreamStarted(*stream.Stream) {
 }
 
 func (sl *StreamListener) Close(s *stream.Stream) {

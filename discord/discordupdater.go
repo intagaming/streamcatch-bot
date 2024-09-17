@@ -39,7 +39,7 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 	}
 
 	content := fmt.Sprintf("<@%s>", r.AuthorId) + msg.Content
-	if r.Message != nil {
+	if s.Status != stream.StatusGoneLive && r.Message != nil {
 		_, err := r.Bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			ID:         r.Message.ID,
 			Channel:    r.Message.ChannelID,

@@ -49,9 +49,14 @@ func (a *Agent) Run() {
 		return
 	}
 
-	// TODO: properly resume stream. For now, make it work like a new stream.
+	// TODO: properly resume stream. Involves changing the HandleOneStreamInstance logic.
+	//  For now, make it work like a new stream.
+	// If a permanent stream resumes and is not Waiting, then catch the same stream session again.
+	if a.Stream.Permanent && a.Stream.Status != stream.StatusWaiting {
+		a.Stream.PlatformLastStreamId = nil
+	}
+	a.Stream.LastStatus = stream.StatusWaiting
 	a.Stream.Status = stream.StatusWaiting
-	a.Stream.PlatformLastStreamId = nil
 
 	clock := a.Broadcaster().Config.Clock
 	go func() {
@@ -137,7 +142,7 @@ func (a *Agent) HandleOneStreamInstance() {
 
 		a.Stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
 
-		a.Stream.Status = stream.StatusGoneLive
+		a.Stream.ChangeStatus(stream.StatusGoneLive)
 		a.Stream.Listener.Status(a.Stream)
 	}
 
@@ -193,9 +198,9 @@ out:
 	}
 }
 
-func (a *Agent) Close(reason stream.EndedReason, err error) {
+func (a *Agent) Close(reason stream.EndedReason, err error) bool {
 	if errors.Is(err, context.Canceled) || (a.ctx.Err() != nil) || (a.iterationCtx != nil && a.iterationCtx.Err() != nil) {
-		return
+		return false
 	}
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
 		a.ctxCancel()
@@ -206,9 +211,9 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 	}
 
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
-		a.Stream.Status = stream.StatusEnded
+		a.Stream.ChangeStatus(stream.StatusEnded)
 	} else {
-		a.Stream.Status = stream.StatusWaiting
+		a.Stream.ChangeStatus(stream.StatusWaiting)
 		a.Stream.ScheduledEndAt = time.Time{}
 	}
 	a.Stream.EndedReason = &reason
@@ -216,6 +221,7 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 
 	a.Stream.Listener.Status(a.Stream)
 	a.Stream.Listener.Close(a.Stream)
+	return true
 }
 
 func (a *Agent) StreamPoller(ctx context.Context) {

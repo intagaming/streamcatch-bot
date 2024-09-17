@@ -26,6 +26,7 @@ type RedisStream struct {
 	Platform             name.Name     `json:"platform"`
 	CreatedAt            time.Time     `json:"created_at"`
 	ScheduledEndAt       time.Time     `json:"scheduled_end_at"`
+	LastStatus           stream.Status `json:"last_status"`
 	Status               stream.Status `json:"status"`
 	ThumbnailUrl         string        `json:"thumbnail_url"`
 	Permanent            bool          `json:"permanent"`
@@ -39,6 +40,7 @@ func RedisStreamFromStream(s *stream.Stream) *RedisStream {
 		Platform:             s.Platform,
 		CreatedAt:            s.CreatedAt,
 		ScheduledEndAt:       s.ScheduledEndAt,
+		LastStatus:           s.LastStatus,
 		Status:               s.Status,
 		ThumbnailUrl:         s.ThumbnailUrl,
 		Permanent:            s.Permanent,
