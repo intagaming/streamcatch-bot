@@ -198,9 +198,9 @@ out:
 	}
 }
 
-func (a *Agent) Close(reason stream.EndedReason, err error) {
+func (a *Agent) Close(reason stream.EndedReason, err error) bool {
 	if errors.Is(err, context.Canceled) || (a.ctx.Err() != nil) || (a.iterationCtx != nil && a.iterationCtx.Err() != nil) {
-		return
+		return false
 	}
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
 		a.ctxCancel()
@@ -221,6 +221,7 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 
 	a.Stream.Listener.Status(a.Stream)
 	a.Stream.Listener.Close(a.Stream)
+	return true
 }
 
 func (a *Agent) StreamPoller(ctx context.Context) {

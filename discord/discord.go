@@ -82,87 +82,25 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 			switch {
 			case strings.HasPrefix(customID, "stop_"):
 				streamId := stream.Id(strings.TrimPrefix(customID, "stop_"))
-				author := interactionAuthor(i.Interaction)
-				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "You don't have permission to do this.",
-							Flags:   discordgo.MessageFlagsEphemeral,
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				bot.StopStream(i, streamId, func(s *stream.Stream) stream.EndedReason {
+					if s.Permanent && s.Status == stream.StatusGoneLive {
+						return stream.ReasonStopOneInstance
 					}
-					return
-				}
-				a, ok := bot.broadcaster.Agents()[streamId]
-				if !ok {
-					bot.sugar.Debugw("Agent not found", "streamId", streamId)
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "The stream is not available anymore.",
-							Flags:   discordgo.MessageFlagsEphemeral,
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-					}
-					return
-				}
-				var reason stream.EndedReason
-				if a.Stream.Permanent && a.Stream.Status == stream.StatusGoneLive {
-					reason = stream.ReasonStopOneInstance
-				} else {
-					reason = stream.ReasonForceStopped
-				}
-				a.Close(reason, nil)
-				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseDeferredMessageUpdate,
+					return stream.ReasonForceStopped
 				})
-				if err != nil {
-					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-				}
 			case strings.HasPrefix(customID, "force_stop_"):
 				streamId := stream.Id(strings.TrimPrefix(customID, "force_stop_"))
-				author := interactionAuthor(i.Interaction)
-				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "You don't have permission to do this.",
-							Flags:   discordgo.MessageFlagsEphemeral,
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-					}
-					return
-				}
-				a, ok := bot.broadcaster.Agents()[streamId]
-				if !ok {
-					bot.sugar.Debugw("Agent not found", "streamId", streamId)
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "The stream is not available anymore.",
-							Flags:   discordgo.MessageFlagsEphemeral,
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-					}
-					return
-				}
-				a.Close(stream.ReasonForceStopped, nil)
+				bot.StopStream(i, streamId, func(s *stream.Stream) stream.EndedReason {
+					return stream.ReasonForceStopped
+				})
+			case strings.HasPrefix(customID, "refresh_"):
 				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseDeferredMessageUpdate,
 				})
 				if err != nil {
 					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+					return
 				}
-			case strings.HasPrefix(customID, "refresh_"):
 				streamId := stream.Id(strings.TrimPrefix(customID, "refresh_"))
 				author := interactionAuthor(i.Interaction)
 				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
@@ -487,6 +425,59 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 		if err != nil {
 			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 		}
+	}
+}
+
+func (bot *Bot) StopStream(i *discordgo.InteractionCreate, streamId stream.Id, getReason func(s *stream.Stream) stream.EndedReason) {
+	err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	})
+	if err != nil {
+		bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+		return
+	}
+
+	author := interactionAuthor(i.Interaction)
+	if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+		_, err = bot.session.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
+			Content: "You don't have permission to do this.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
+		if err != nil {
+			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	a, ok := bot.broadcaster.Agents()[streamId]
+	if !ok {
+		bot.sugar.Debugw("Agent not found", "streamId", streamId)
+		_, err = bot.session.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
+			Content: "The stream is not available anymore.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
+		if err != nil {
+			bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	closed := a.Close(getReason(a.Stream), nil)
+	if closed {
+		msg := bot.MakeStreamEndedMessage(a.Stream)
+		_, err = bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content:    &msg.Content,
+			Components: &msg.Components,
+			Embeds:     &msg.Embeds,
+		})
+	} else {
+		_, err = bot.session.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
+			Content: "Could not stop the stream.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
+	}
+	if err != nil {
+		bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 	}
 }
 
