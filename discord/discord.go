@@ -3,8 +3,10 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"os"
 	"streamcatch-bot/broadcaster"
@@ -313,6 +315,9 @@ func (bot *Bot) SendUnauthorizedInteractionResponse(i *discordgo.Interaction) {
 
 func (bot *Bot) CheckStreamAuthor(i *discordgo.Interaction, streamId stream.Id, author *discordgo.User) bool {
 	streamAuthorId, err := bot.scRedisClient.GetStreamAuthorId(context.Background(), string(streamId))
+	if errors.Is(err, redis.Nil) {
+		return false
+	}
 	if err != nil {
 		bot.sugar.Errorf("could not get stream author id for stream %s: %v", streamId, err)
 		return false
