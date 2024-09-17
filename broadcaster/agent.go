@@ -55,6 +55,7 @@ func (a *Agent) Run() {
 	if a.Stream.Permanent && a.Stream.Status != stream.StatusWaiting {
 		a.Stream.PlatformLastStreamId = nil
 	}
+	a.Stream.LastStatus = stream.StatusWaiting
 	a.Stream.Status = stream.StatusWaiting
 
 	clock := a.Broadcaster().Config.Clock
@@ -141,7 +142,7 @@ func (a *Agent) HandleOneStreamInstance() {
 
 		a.Stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
 
-		a.Stream.Status = stream.StatusGoneLive
+		a.Stream.ChangeStatus(stream.StatusGoneLive)
 		a.Stream.Listener.Status(a.Stream)
 	}
 
@@ -210,9 +211,9 @@ func (a *Agent) Close(reason stream.EndedReason, err error) {
 	}
 
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
-		a.Stream.Status = stream.StatusEnded
+		a.Stream.ChangeStatus(stream.StatusEnded)
 	} else {
-		a.Stream.Status = stream.StatusWaiting
+		a.Stream.ChangeStatus(stream.StatusWaiting)
 		a.Stream.ScheduledEndAt = time.Time{}
 	}
 	a.Stream.EndedReason = &reason

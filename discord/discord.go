@@ -84,6 +84,16 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 				streamId := stream.Id(strings.TrimPrefix(customID, "stop_"))
 				author := interactionAuthor(i.Interaction)
 				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "You don't have permission to do this.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+					}
 					return
 				}
 				a, ok := bot.broadcaster.Agents()[streamId]
@@ -93,6 +103,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 						Type: discordgo.InteractionResponseChannelMessageWithSource,
 						Data: &discordgo.InteractionResponseData{
 							Content: "The stream is not available anymore.",
+							Flags:   discordgo.MessageFlagsEphemeral,
 						},
 					})
 					if err != nil {
@@ -117,6 +128,16 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 				streamId := stream.Id(strings.TrimPrefix(customID, "force_stop_"))
 				author := interactionAuthor(i.Interaction)
 				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "You don't have permission to do this.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+					if err != nil {
+						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+					}
 					return
 				}
 				a, ok := bot.broadcaster.Agents()[streamId]
@@ -126,6 +147,7 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 						Type: discordgo.InteractionResponseChannelMessageWithSource,
 						Data: &discordgo.InteractionResponseData{
 							Content: "The stream is not available anymore.",
+							Flags:   discordgo.MessageFlagsEphemeral,
 						},
 					})
 					if err != nil {

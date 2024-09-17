@@ -74,8 +74,8 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	var recordLink string
 	var err error
 	switch *s.EndedReason {
-	case stream.ReasonStreamEnded, stream.ReasonFulfilled, stream.ReasonForceStopped:
-		if s.PlatformLastStreamId == nil {
+	case stream.ReasonStreamEnded, stream.ReasonFulfilled, stream.ReasonForceStopped, stream.ReasonStopOneInstance:
+		if s.PlatformLastStreamId == nil || s.LastStatus == stream.StatusWaiting {
 			break
 		}
 		recordLink, err = bot.GetPlaybackURL(s)

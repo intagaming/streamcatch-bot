@@ -17,6 +17,7 @@ type Stream struct {
 	Platform        name.Name
 	CreatedAt       time.Time
 	ScheduledEndAt  time.Time
+	LastStatus      Status
 	Status          Status
 	SCStreamStarted bool
 	EndedReason     *EndedReason
@@ -28,6 +29,11 @@ type Stream struct {
 	// Can be used to detect if the stream ever went online.
 	PlatformLastStreamId *string
 	Mutex                Mutex
+}
+
+func (s *Stream) ChangeStatus(status Status) {
+	s.LastStatus = s.Status
+	s.Status = status
 }
 
 type Mutex interface {
