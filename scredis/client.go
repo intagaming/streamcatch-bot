@@ -27,6 +27,7 @@ type Client interface {
 	SetStreamChannelID(ctx context.Context, streamId string, channelId string) error
 	GetStreamMessage(ctx context.Context, streamId string) (string, error)
 	SetStreamMessage(ctx context.Context, streamId string, messageJson string) error
+	DelStreamMessage(ctx context.Context, streamId string) error
 	GetStreamAuthorId(ctx context.Context, streamId string) (string, error)
 	SetStreamAuthorId(ctx context.Context, streamId string, authorId string) error
 	GetGuildStreams(ctx context.Context, guildId string) ([]string, error)
@@ -36,6 +37,10 @@ type Client interface {
 type RealClient struct {
 	Redis   *redis.Client
 	Redsync *redsync.Redsync
+}
+
+func (r *RealClient) DelStreamMessage(ctx context.Context, streamId string) error {
+	return r.Redis.Del(ctx, StreamDiscordMessageKey+streamId).Err()
 }
 
 func (r *RealClient) GetStreams(ctx context.Context, ids []string) (map[string]string, error) {
