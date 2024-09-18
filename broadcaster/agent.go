@@ -60,7 +60,7 @@ func (a *Agent) Run() {
 
 	clock := a.Broadcaster().Config.Clock
 	go func() {
-		t := clock.TickerFunc(a.ctx, scredis.MutexDuration/2, func() error {
+		t := clock.TickerFunc(a.ctx, scredis.MutexDuration/5, func() error {
 			_, err := a.Stream.Mutex.Extend()
 			return err
 		}, "StreamMutexExtender")

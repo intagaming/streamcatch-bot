@@ -204,6 +204,10 @@ func (b *Broadcaster) RefreshAgent(streamId stream.Id, newScheduledEndAt time.Ti
 }
 
 func (b *Broadcaster) ResumeStream(redisStream *scredis.RedisStream, discordUpdater streamlistener.DiscordUpdater, mutex stream.Mutex) {
+	if _, ok := b.agents[stream.Id(redisStream.Id)]; ok {
+		return
+	}
+
 	sl := streamlistener.StreamListener{
 		Sugar:          b.sugar,
 		DiscordUpdater: discordUpdater,
@@ -251,6 +255,10 @@ func (b *Broadcaster) ResumeStreams() {
 		panic(err)
 	}
 	for streamId, streamJson := range streams {
+		if _, ok := b.agents[stream.Id(streamId)]; ok {
+			continue
+		}
+
 		// Obtain right to handle stream
 		mutex := scRedisClient.StreamMutex(streamId)
 		err := mutex.Lock()
