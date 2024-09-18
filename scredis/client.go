@@ -45,15 +45,18 @@ func (r *RealClient) DelStreamMessage(ctx context.Context, streamId string) erro
 
 func (r *RealClient) GetStreams(ctx context.Context, ids []string) (map[string]string, error) {
 	var streams = make(map[string]string, len(ids))
+	var streamCmds = make(map[string]*redis.StringCmd, len(ids))
 	_, err := r.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		for _, id := range ids {
-			data := pipe.HGet(ctx, StreamsKey, id).Val()
-			streams[id] = data
+			streamCmds[id] = pipe.HGet(ctx, StreamsKey, id)
 		}
 		return nil
 	})
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
+	}
+	for streamId, cmd := range streamCmds {
+		streams[streamId] = cmd.Val()
 	}
 	return streams, nil
 }
