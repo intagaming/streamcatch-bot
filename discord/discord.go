@@ -296,7 +296,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			if !redisStream.Permanent {
 				continue
 			}
-			contentSb.Write([]byte(fmt.Sprintf("- Stream ID: `%s`; URL: %s\n", streamId, redisStream.Url)))
+			contentSb.Write([]byte(fmt.Sprintf("- Stream ID: `%s`; URL: <%s>\n", streamId, redisStream.Url)))
 		}
 
 		content := contentSb.String()
