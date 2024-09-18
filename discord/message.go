@@ -48,7 +48,8 @@ func (bot *Bot) GetPlaybackURL(s *stream.Stream) (string, error) {
 	return fmt.Sprintf("%s/get?path=%s&start=%s&duration=%f&format=mp4", bot.mediaServerPlaybackUrlPublic, s.Id, lastEntry.Start, lastEntry.Duration), nil
 }
 
-func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
+func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream, authorId string) *StreamMessageContent {
+	content := fmt.Sprintf("<@%s>", authorId)
 	descSb := strings.Builder{}
 	switch *s.EndedReason {
 	case stream.ReasonStreamEnded:
@@ -127,6 +128,7 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 		})
 	}
 	return &StreamMessageContent{
+		Content: content,
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
@@ -151,9 +153,11 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream) *StreamMessageContent {
 	}
 }
 
-func (bot *Bot) MakeStreamStartedMessage(s *stream.Stream) *StreamMessageContent {
+func (bot *Bot) MakeStreamStartedMessage(s *stream.Stream, authorId string) *StreamMessageContent {
+	content := fmt.Sprintf("<@%s>", authorId)
 	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, s.Id)
 	return &StreamMessageContent{
+		Content: content,
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
@@ -204,13 +208,15 @@ func (bot *Bot) MakeStreamStartedMessage(s *stream.Stream) *StreamMessageContent
 	}
 }
 
-func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream) *StreamMessageContent {
+func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream, authorId string) *StreamMessageContent {
+	content := fmt.Sprintf("<@%s>", authorId)
 	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, s.Id)
 	isPermanentStr := "No"
 	if s.Permanent {
 		isPermanentStr = "Yes"
 	}
 	return &StreamMessageContent{
+		Content: content,
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",

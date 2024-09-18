@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"streamcatch-bot/broadcaster/stream"
 	"sync"
@@ -25,25 +24,24 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 	switch s.Status {
 	case stream.StatusWaiting:
 		if s.EndedReason != nil {
-			msg = r.Bot.MakeStreamEndedMessage(s)
+			msg = r.Bot.MakeStreamEndedMessage(s, r.AuthorId)
 		} else {
-			msg = r.Bot.MakeStreamStartedMessage(s)
+			msg = r.Bot.MakeStreamStartedMessage(s, r.AuthorId)
 		}
 	case stream.StatusGoneLive:
-		msg = r.Bot.MakeStreamGoneLiveMessage(s)
+		msg = r.Bot.MakeStreamGoneLiveMessage(s, r.AuthorId)
 	case stream.StatusEnded:
-		msg = r.Bot.MakeStreamEndedMessage(s)
+		msg = r.Bot.MakeStreamEndedMessage(s, r.AuthorId)
 	default:
 		r.Bot.sugar.Fatalf("Unknown stream status: %d", s.Status)
 		return
 	}
 
-	content := fmt.Sprintf("<@%s>", r.AuthorId) + msg.Content
 	if r.Message != nil {
 		_, err := r.Bot.session.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			ID:         r.Message.ID,
 			Channel:    r.Message.ChannelID,
-			Content:    &content,
+			Content:    &msg.Content,
 			Components: &msg.Components,
 			Embeds:     &msg.Embeds,
 		})
@@ -52,7 +50,7 @@ func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 		}
 	} else {
 		discordMsg, err := r.Bot.session.ChannelMessageSendComplex(r.ChannelID, &discordgo.MessageSend{
-			Content:    content,
+			Content:    msg.Content,
 			Embeds:     msg.Embeds,
 			Components: msg.Components,
 		})

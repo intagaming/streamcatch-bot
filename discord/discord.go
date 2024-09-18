@@ -386,14 +386,7 @@ func (bot *Bot) StopStream(i *discordgo.InteractionCreate, streamId stream.Id, g
 
 	closed := a.Close(getReason(a.Stream), nil)
 	var err error
-	if closed {
-		msg := bot.MakeStreamEndedMessage(a.Stream)
-		_, err = bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content:    &msg.Content,
-			Components: &msg.Components,
-			Embeds:     &msg.Embeds,
-		})
-	} else {
+	if !closed {
 		_, err = bot.session.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
 			Content: "Could not stop the stream.",
 			Flags:   discordgo.MessageFlagsEphemeral,
@@ -546,10 +539,9 @@ var (
 				}
 				return
 			}
-			streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream)
-			content := fmt.Sprintf("<@%s>", author.ID) + streamStartedMessage.Content
+			streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream, author.ID)
 			_, err = bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-				Content:    &content,
+				Content:    &streamStartedMessage.Content,
 				Components: &streamStartedMessage.Components,
 				Embeds:     &streamStartedMessage.Embeds,
 			})
