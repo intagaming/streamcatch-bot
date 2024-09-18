@@ -80,6 +80,8 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 				bot.sugar.Errorf("could not respond to interaction: %s", err)
 			}
 
+			<-bot.initializationCtx.Done()
+
 			if h, ok := commandsHandlers[i.ApplicationCommandData().Name]; ok {
 				h(&bot, i)
 			}
@@ -93,6 +95,8 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 					if err != nil {
 						bot.sugar.Errorf("could not respond to interaction: %s", err)
 					}
+
+					<-bot.initializationCtx.Done()
 
 					arg := strings.TrimPrefix(customID, component.Prefix)
 					handleFn(&bot, i, arg)
