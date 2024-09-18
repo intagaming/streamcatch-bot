@@ -202,6 +202,11 @@ func (a *Agent) Close(reason stream.EndedReason, err error) bool {
 	if errors.Is(err, context.Canceled) || (a.ctx.Err() != nil) || (a.iterationCtx != nil && a.iterationCtx.Err() != nil) {
 		return false
 	}
+
+	if reason == stream.ReasonErrored {
+		a.sugar.Errorf("Stream %s, URL %s closed with error: %v", a.Stream.Id, a.Stream.Url, err)
+	}
+
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
 		a.ctxCancel()
 		a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
