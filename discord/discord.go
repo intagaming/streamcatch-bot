@@ -19,12 +19,6 @@ import (
 
 var (
 	ExtendDuration = 10 * time.Minute
-	// TODO: move this to db
-	//StreamAuthor   = make(map[stream.Id]*discordgo.User)
-	//GuildStreams   = make(map[string]map[stream.Id]struct{})
-	//StreamGuild    = make(map[stream.Id]string)
-	//UserStreams    = make(map[string]map[stream.Id]struct{})
-	//StreamUser     = make(map[stream.Id]string)
 )
 
 type Bot struct {
@@ -79,85 +73,13 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 			}
 		case discordgo.InteractionMessageComponent:
 			customID := i.MessageComponentData().CustomID
-			switch {
-			case strings.HasPrefix(customID, "stop_"):
-				streamId := stream.Id(strings.TrimPrefix(customID, "stop_"))
-				bot.StopStream(i, streamId, func(s *stream.Stream) stream.EndedReason {
-					if s.Permanent && s.Status == stream.StatusGoneLive {
-						return stream.ReasonStopOneInstance
-					}
-					return stream.ReasonForceStopped
-				})
-			case strings.HasPrefix(customID, "force_stop_"):
-				streamId := stream.Id(strings.TrimPrefix(customID, "force_stop_"))
-				bot.StopStream(i, streamId, func(s *stream.Stream) stream.EndedReason {
-					return stream.ReasonForceStopped
-				})
-			case strings.HasPrefix(customID, "refresh_"):
-				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseDeferredMessageUpdate,
-				})
-				if err != nil {
-					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-					return
+			for prefix, handleFn := range componentHandlers {
+				if strings.HasPrefix(customID, prefix) {
+					arg := strings.TrimPrefix(customID, prefix)
+					handleFn(&bot, i, arg)
 				}
-				streamId := stream.Id(strings.TrimPrefix(customID, "refresh_"))
-				author := interactionAuthor(i.Interaction)
-				if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
-					return
-				}
-				a, ok := bot.broadcaster.Agents()[streamId]
-				if !ok {
-					bot.sugar.Debugw("Agent not found", "streamId", streamId)
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "The stream is not available anymore.",
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-					}
-					return
-				}
-				newScheduledEndAt := bot.broadcaster.Config.Clock.Now().Add(ExtendDuration)
-				if a.Stream.ScheduledEndAt.After(newScheduledEndAt) {
-					newScheduledEndAt = a.Stream.ScheduledEndAt
-				}
-				err = bot.broadcaster.RefreshAgent(streamId, newScheduledEndAt)
-				if err != nil {
-					err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "An error occurred",
-						},
-					})
-					if err != nil {
-						bot.sugar.Errorf("Failed to respond to interaction: %v", err)
-					}
-					return
-				}
-				streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream)
-				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseUpdateMessage,
-					Data: &discordgo.InteractionResponseData{
-						Content:    fmt.Sprintf("<@%s>", author.ID) + streamStartedMessage.Content,
-						Components: streamStartedMessage.Components,
-						Embeds:     streamStartedMessage.Embeds,
-					},
-				})
-				if err != nil {
-					bot.sugar.Errorf("could not update interaction: %v", err)
-				}
-			case strings.HasPrefix(customID, "permanent_recatch_"):
-				streamUrl := strings.TrimPrefix(customID, "permanent_recatch_")
-				bot.newStreamCatch(i.Interaction, streamUrl, true)
-			case strings.HasPrefix(customID, "recatch_"):
-				streamUrl := strings.TrimPrefix(customID, "recatch_")
-				bot.newStreamCatch(i.Interaction, streamUrl, false)
 			}
 		}
-
 	})
 
 	session.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
@@ -546,6 +468,84 @@ var (
 		},
 		streamcatchManageCommandName: func(bot *Bot, i *discordgo.InteractionCreate) {
 			bot.handleStreamCatchManageCmd(i)
+		},
+	}
+	componentHandlers = map[string]func(bot *Bot, i *discordgo.InteractionCreate, arg string){
+		"stop_": func(bot *Bot, i *discordgo.InteractionCreate, streamId string) {
+			bot.StopStream(i, stream.Id(streamId), func(s *stream.Stream) stream.EndedReason {
+				if s.Permanent && s.Status == stream.StatusGoneLive {
+					return stream.ReasonStopOneInstance
+				}
+				return stream.ReasonForceStopped
+			})
+		},
+		"force_stop_": func(bot *Bot, i *discordgo.InteractionCreate, streamId string) {
+			bot.StopStream(i, stream.Id(streamId), func(s *stream.Stream) stream.EndedReason {
+				return stream.ReasonForceStopped
+			})
+		},
+		"refresh_": func(bot *Bot, i *discordgo.InteractionCreate, arg string) {
+			err := bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseDeferredMessageUpdate,
+			})
+			if err != nil {
+				bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				return
+			}
+			streamId := stream.Id(arg)
+			author := interactionAuthor(i.Interaction)
+			if !bot.CheckStreamAuthor(i.Interaction, streamId, author) {
+				return
+			}
+			a, ok := bot.broadcaster.Agents()[streamId]
+			if !ok {
+				bot.sugar.Debugw("Agent not found", "streamId", streamId)
+				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "The stream is not available anymore.",
+					},
+				})
+				if err != nil {
+					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				}
+				return
+			}
+			newScheduledEndAt := bot.broadcaster.Config.Clock.Now().Add(ExtendDuration)
+			if a.Stream.ScheduledEndAt.After(newScheduledEndAt) {
+				newScheduledEndAt = a.Stream.ScheduledEndAt
+			}
+			err = bot.broadcaster.RefreshAgent(streamId, newScheduledEndAt)
+			if err != nil {
+				err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "An error occurred",
+					},
+				})
+				if err != nil {
+					bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+				}
+				return
+			}
+			streamStartedMessage := bot.MakeStreamStartedMessage(a.Stream)
+			err = bot.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseUpdateMessage,
+				Data: &discordgo.InteractionResponseData{
+					Content:    fmt.Sprintf("<@%s>", author.ID) + streamStartedMessage.Content,
+					Components: streamStartedMessage.Components,
+					Embeds:     streamStartedMessage.Embeds,
+				},
+			})
+			if err != nil {
+				bot.sugar.Errorf("could not update interaction: %v", err)
+			}
+		},
+		"permanent_recatch_": func(bot *Bot, i *discordgo.InteractionCreate, streamUrl string) {
+			bot.newStreamCatch(i.Interaction, streamUrl, true)
+		},
+		"recatch_": func(bot *Bot, i *discordgo.InteractionCreate, streamUrl string) {
+			bot.newStreamCatch(i.Interaction, streamUrl, false)
 		},
 	}
 )
