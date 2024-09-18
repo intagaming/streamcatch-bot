@@ -254,6 +254,7 @@ func (b *Broadcaster) ResumeStreams() {
 	if err != nil {
 		panic(err)
 	}
+	<-time.After(3 * time.Second)
 	for streamId, streamJson := range streams {
 		if _, ok := b.agents[stream.Id(streamId)]; ok {
 			continue

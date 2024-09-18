@@ -238,6 +238,8 @@ func main() {
 		}()
 	}
 
+	bot.Init()
+
 	sugar.Info("Initialization complete.")
 
 	sigch := make(chan os.Signal, 1)
