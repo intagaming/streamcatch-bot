@@ -240,7 +240,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 		var err error
 		ctx := context.Background()
 		if i.Member != nil {
-			streamIds, err = bot.scRedisClient.GetGuildStreams(ctx, i.GuildID)
+			streamIds, err = bot.scRedisClient.GetGuildStreamsFromAuthor(ctx, i.GuildID, i.Member.User.ID)
 		} else {
 			streamIds, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
 		}
@@ -307,13 +307,13 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			bot.sugar.Errorf("Failed to edit interaction: %v", err)
 		}
 	case "cancel-all-permanent":
-		var streams []string
+		var streamIds []string
 		ctx := context.Background()
 		var err error
 		if i.Member != nil {
-			streams, err = bot.scRedisClient.GetGuildStreams(ctx, i.GuildID)
+			streamIds, err = bot.scRedisClient.GetGuildStreamsFromAuthor(ctx, i.GuildID, i.Member.User.ID)
 		} else {
-			streams, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
+			streamIds, err = bot.scRedisClient.GetUserStreams(ctx, i.User.ID)
 		}
 		if err != nil {
 			bot.sugar.Errorf("could not get stream list: %v", err)
@@ -326,7 +326,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			}
 			return
 		}
-		if len(streams) == 0 {
+		if len(streamIds) == 0 {
 			content := "No permanent streams found."
 			_, err := bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &content,
@@ -337,7 +337,7 @@ func (bot *Bot) handleStreamCatchManageCmd(i *discordgo.InteractionCreate) {
 			return
 		}
 
-		for _, streamId := range streams {
+		for _, streamId := range streamIds {
 			a, ok := bot.broadcaster.Agents()[stream.Id(streamId)]
 			if !ok {
 				bot.sugar.Errorf("Cannot find agent from stream %s", streamId)

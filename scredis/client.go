@@ -32,11 +32,36 @@ type Client interface {
 	SetStreamAuthorId(ctx context.Context, streamId string, authorId string) error
 	GetGuildStreams(ctx context.Context, guildId string) ([]string, error)
 	GetUserStreams(ctx context.Context, userId string) ([]string, error)
+	GetGuildStreamsFromAuthor(ctx context.Context, guildId string, authorId string) ([]string, error)
 }
 
 type RealClient struct {
 	Redis   *redis.Client
 	Redsync *redsync.Redsync
+}
+
+func (r *RealClient) GetGuildStreamsFromAuthor(ctx context.Context, guildId string, authorId string) ([]string, error) {
+	var authorStreamIds []string
+	guildStreamIds, err := r.GetGuildStreams(ctx, guildId)
+	if err != nil {
+		return nil, err
+	}
+	cmds, err := r.Redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for _, guildStreamId := range guildStreamIds {
+			pipe.Get(ctx, StreamDiscordAuthorIdKey+guildStreamId)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i, guildStreamId := range guildStreamIds {
+		streamAuthorId := cmds[i].(*redis.StringCmd).Val()
+		if streamAuthorId == authorId {
+			authorStreamIds = append(authorStreamIds, guildStreamId)
+		}
+	}
+	return authorStreamIds, nil
 }
 
 func (r *RealClient) DelStreamMessage(ctx context.Context, streamId string) error {

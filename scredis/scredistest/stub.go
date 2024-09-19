@@ -23,6 +23,24 @@ type TestSCRedisClient struct {
 	StreamChannelID map[string]string
 }
 
+func (t *TestSCRedisClient) GetGuildStreamsFromAuthor(ctx context.Context, guildId string, authorId string) ([]string, error) {
+	var authorStreamIds []string
+	guildStreamIds, err := t.GetGuildStreams(ctx, guildId)
+	if err != nil {
+		return nil, err
+	}
+	for _, guildStreamId := range guildStreamIds {
+		streamAuthorId, err := t.GetStreamAuthorId(ctx, guildStreamId)
+		if err != nil {
+			return nil, err
+		}
+		if streamAuthorId == authorId {
+			authorStreamIds = append(authorStreamIds, guildStreamId)
+		}
+	}
+	return authorStreamIds, nil
+}
+
 func (t *TestSCRedisClient) DelStreamMessage(_ context.Context, streamId string) error {
 	delete(t.StreamMessage, streamId)
 	return nil
