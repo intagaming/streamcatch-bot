@@ -138,7 +138,7 @@ func (a *Agent) HandleOneStreamInstance() {
 
 	// Set stream gone online, and set timeout for the stream
 	if a.Stream.Status != stream.StatusGoneLive {
-		a.sugar.Debugw("Stream gone online", "streamId", a.Stream.Id)
+		a.sugar.Infow("Stream gone online", "streamId", a.Stream.Id, "Platform StreamId", data.StreamId)
 
 		a.Stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
 
@@ -209,10 +209,10 @@ func (a *Agent) Close(reason stream.EndedReason, err error) bool {
 
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
 		a.ctxCancel()
-		a.sugar.Debugw("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
+		a.sugar.Infow("Agent closed", "streamId", a.Stream.Id, "reason", reason, "error", err)
 	} else {
 		a.iterationCtxCancel()
-		a.sugar.Debugw("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
+		a.sugar.Infow("Agent iteration closed", "streamId", a.Stream.Id, "reason", reason, "error", err, "iter err", a.iterationCtx.Err())
 	}
 
 	if !a.Stream.Permanent || reason == stream.ReasonForceStopped {
