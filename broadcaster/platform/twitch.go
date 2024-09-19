@@ -84,7 +84,7 @@ func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx conte
 					"rateLimitReset", streams.GetRateLimitReset())
 				continue
 			}
-			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "id", streams.Data.Streams[0].ID)
+			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "twitch stream", streams.Data.Streams[0])
 			return &name.WaitForOnlineData{StreamId: streams.Data.Streams[0].ID}, nil
 		}
 	}
