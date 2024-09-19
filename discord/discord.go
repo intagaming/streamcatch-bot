@@ -395,6 +395,35 @@ func (bot *Bot) StopStream(i *discordgo.InteractionCreate, streamId stream.Id, g
 	if err != nil {
 		bot.sugar.Errorf("Failed to respond to interaction: %v", err)
 	}
+
+	msg := bot.GetStreamDiscordMessage(a.Stream, author.ID)
+	_, err = bot.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content:    &msg.Content,
+		Components: &msg.Components,
+		Embeds:     &msg.Embeds,
+	})
+	if err != nil {
+		bot.sugar.Errorf("Failed to respond to interaction: %v", err)
+	}
+}
+
+func (bot *Bot) GetStreamDiscordMessage(s *stream.Stream, authorId string) *StreamMessageContent {
+	var msg *StreamMessageContent
+	switch s.Status {
+	case stream.StatusWaiting:
+		if s.EndedReason != nil {
+			msg = bot.MakeStreamEndedMessage(s, authorId)
+		} else {
+			msg = bot.MakeStreamStartedMessage(s, authorId)
+		}
+	case stream.StatusGoneLive:
+		msg = bot.MakeStreamGoneLiveMessage(s, authorId)
+	case stream.StatusEnded:
+		msg = bot.MakeStreamEndedMessage(s, authorId)
+	default:
+		bot.sugar.Fatalf("Unknown stream status: %d", s.Status)
+	}
+	return msg
 }
 
 func interactionAuthor(i *discordgo.Interaction) *discordgo.User {
