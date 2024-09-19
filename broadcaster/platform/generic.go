@@ -5,13 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go.uber.org/zap"
 	"io"
 	"os/exec"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
 	"strings"
-	"time"
 )
 
 var Generic name.Name = "generic"
@@ -24,34 +22,20 @@ type GenericStreamlinkInfo struct {
 	} `json:"metadata"`
 }
 
-func (g *GenericStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+func (g *GenericStreamPlatform) GetStream(ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
 	var streamlinkInfo GenericStreamlinkInfo
 
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, contextCancelledErr
-		case <-ticker.C:
-			statusCheckCmd := exec.CommandContext(ctx, "streamlink", s.Url, "-j")
-			output, _ := statusCheckCmd.CombinedOutput()
-			if strings.Contains(string(output), `"plugin": "`) {
-				if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
-					sugar.Panicw("Failed to unmarshal output", "output", string(output), "error", err)
-				}
-				sugar.Debugw("Detected stream live", "url", s.Url)
-				return &name.WaitForOnlineData{StreamId: streamlinkInfo.Metadata.Id}, nil
-			} else if strings.Contains(string(output), `No playable streams`) {
-				sugar.Debugw("Retrying getting stream", "url", s.Url)
-				continue
-			} else {
-				sugar.Errorf("Doesn't recognize the output from the streamlink stream checking command: %s", string(output))
-				return nil, errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
-			}
+	statusCheckCmd := exec.CommandContext(ctx, "streamlink", s.Url, "-j")
+	output, _ := statusCheckCmd.CombinedOutput()
+	if strings.Contains(string(output), `"plugin": "`) {
+		if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
+			return nil, err
 		}
+		return &name.StreamData{StreamId: streamlinkInfo.Metadata.Id}, nil
+	} else if strings.Contains(string(output), `No playable streams`) {
+		return nil, stream.NotOnlineErr
 	}
-
+	return nil, errors.New("Doesn't recognize the output from the streamlink stream checking command. Output: " + string(output))
 }
 
 func (g *GenericStreamPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {

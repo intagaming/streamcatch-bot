@@ -5,22 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
+	"github.com/nicklaw5/helix/v2"
 	"io"
 	"net/url"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
 	"strings"
-	"time"
-
-	"github.com/nicklaw5/helix/v2"
 )
 
 var (
-	contextCancelledErr           = errors.New("context canceled")
-	malformedTwitchUrl            = errors.New("couldn't find Twitch streamer name")
-	channelNotFoundErr            = errors.New("channel not found")
-	Twitch              name.Name = "twitch"
+	malformedTwitchUrl           = errors.New("couldn't find Twitch streamer name")
+	channelNotFoundErr           = errors.New("channel not found")
+	Twitch             name.Name = "twitch"
 )
 
 func GetTwitchStreamerNameFromUrl(twitchUrl string) (string, error) {
@@ -58,36 +54,22 @@ type TwitchStreamPlatform struct {
 	TwitchAuthToken string
 }
 
-func (t *TwitchStreamPlatform) WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
+func (t *TwitchStreamPlatform) GetStream(_ context.Context, s *stream.Stream) (*name.StreamData, error) {
 	streamerName, err := GetTwitchStreamerNameFromUrl(s.Url)
 	if err != nil {
 		return nil, err
 	}
 
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, contextCancelledErr
-		case <-ticker.C:
-			streams, err := t.HelixClient.GetStreams(&helix.StreamsParams{
-				UserLogins: []string{streamerName},
-			})
-			if err != nil {
-				sugar.Debugw("Failed to get streams. Retrying", "streamerName", streamerName, "error", err)
-				continue
-			}
-			if len(streams.Data.Streams) == 0 {
-				sugar.Debugw("Retrying getting stream", "streamerName", streamerName,
-					"rateLimit", streams.GetRateLimit(), "rateLimitRemaining", streams.GetRateLimitRemaining(),
-					"rateLimitReset", streams.GetRateLimitReset())
-				continue
-			}
-			sugar.Debugw("Detected twitch stream live", "streamerName", streamerName, "twitch stream", streams.Data.Streams[0])
-			return &name.WaitForOnlineData{StreamId: streams.Data.Streams[0].ID}, nil
-		}
+	streams, err := t.HelixClient.GetStreams(&helix.StreamsParams{
+		UserLogins: []string{streamerName},
+	})
+	if err != nil {
+		return nil, err
 	}
+	if len(streams.Data.Streams) == 0 {
+		return nil, stream.NotOnlineErr
+	}
+	return &name.StreamData{StreamId: streams.Data.Streams[0].ID}, nil
 }
 
 func (t *TwitchStreamPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {

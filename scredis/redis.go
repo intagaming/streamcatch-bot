@@ -21,30 +21,31 @@ const (
 )
 
 type RedisStream struct {
-	Id                   string        `json:"id"`
-	Url                  string        `json:"url"`
-	Platform             name.Name     `json:"platform"`
-	CreatedAt            time.Time     `json:"created_at"`
-	ScheduledEndAt       time.Time     `json:"scheduled_end_at"`
-	LastStatus           stream.Status `json:"last_status"`
-	Status               stream.Status `json:"status"`
-	ThumbnailUrl         string        `json:"thumbnail_url"`
-	Permanent            bool          `json:"permanent"`
-	PlatformLastStreamId *string       `json:"platform_last_stream_id"`
+	Id             string        `json:"id"`
+	Url            string        `json:"url"`
+	Platform       name.Name     `json:"platform"`
+	CreatedAt      time.Time     `json:"created_at"`
+	ScheduledEndAt time.Time     `json:"scheduled_end_at"`
+	LastStatus     stream.Status `json:"last_status"`
+	Status         stream.Status `json:"status"`
+	ThumbnailUrl   string        `json:"thumbnail_url"`
+	Permanent      bool          `json:"permanent"`
+	Live           bool          `json:"live"`
+	LastLiveAt     time.Time     `json:"last_live_at"`
 }
 
 func RedisStreamFromStream(s *stream.Stream) *RedisStream {
 	return &RedisStream{
-		Id:                   string(s.Id),
-		Url:                  s.Url,
-		Platform:             s.Platform,
-		CreatedAt:            s.CreatedAt,
-		ScheduledEndAt:       s.ScheduledEndAt,
-		LastStatus:           s.LastStatus,
-		Status:               s.Status,
-		ThumbnailUrl:         s.ThumbnailUrl,
-		Permanent:            s.Permanent,
-		PlatformLastStreamId: s.PlatformLastStreamId,
+		Id:             string(s.Id),
+		Url:            s.Url,
+		Platform:       s.Platform,
+		CreatedAt:      s.CreatedAt,
+		ScheduledEndAt: s.ScheduledEndAt,
+		LastStatus:     s.LastStatus,
+		Status:         s.Status,
+		ThumbnailUrl:   s.ThumbnailUrl,
+		Permanent:      s.Permanent,
+		Live:           s.Live,
 	}
 }
 

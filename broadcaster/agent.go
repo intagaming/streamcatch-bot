@@ -53,10 +53,11 @@ func (a *Agent) Run() {
 	//  For now, make it work like a new stream.
 	// If a permanent stream resumes and is not Waiting, then catch the same stream session again.
 	if a.Stream.Permanent && a.Stream.Status != stream.StatusWaiting {
-		a.Stream.PlatformLastStreamId = nil
+		a.Stream.Live = false
 	}
 	a.Stream.LastStatus = stream.StatusWaiting
 	a.Stream.Status = stream.StatusWaiting
+	// TODO: store to db
 
 	clock := a.Broadcaster().Config.Clock
 	go func() {
@@ -109,27 +110,36 @@ func (a *Agent) HandleOneStreamInstance() {
 		a.startDummyStream(dummyStreamCtx, pipeWrite)
 	}
 
-	// Wait for stream to come online based on the platform
 	platform, ok := b.Config.StreamPlatforms[a.Stream.Platform]
 	if !ok {
 		a.Close(stream.ReasonErrored, fmt.Errorf("unknown platform: %s", a.Stream.Platform))
 		return
 	}
-	var data *name.WaitForOnlineData
-	for {
-		var waitError error
-		data, waitError = platform.WaitForOnline(a.sugar, iterationCtx, a.Stream)
-		if waitError != nil {
-			a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
+
+	// If stream is live, it is a permanent stream that's being handled. Must wait
+	// until stream comes offline to handle next stream instance.
+	if a.Stream.Live {
+		a.sugar.Debugw("Waiting for stream to come offline", "streamId", a.Stream.Id)
+		err := a.WaitUntilOffline(iterationCtx, a.Stream)
+		if err != nil {
+			a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to come offline: %w", err))
 			return
 		}
-		if a.Stream.PlatformLastStreamId == nil || data.StreamId != *a.Stream.PlatformLastStreamId {
-			break
-		}
-		a.sugar.Debugw("WaitForOnline stream session is already handled. Waiting for new stream session.", "WaitForOnline StreamId", data.StreamId)
+		a.Stream.Live = false
+		// TODO: store db
 	}
 
-	a.Stream.PlatformLastStreamId = &data.StreamId
+	// Wait for stream to come online
+	a.sugar.Debugw("Waiting for stream to come online", "streamId", a.Stream.Id)
+	data, waitError := a.WaitUntilOnline(a.sugar, iterationCtx, a.Stream)
+	if waitError != nil {
+		a.Close(stream.ReasonErrored, fmt.Errorf("failed to wait for stream to online: %w", waitError))
+		return
+	}
+	a.Stream.Live = true
+	a.Stream.LastLiveAt = clock.Now()
+
+	a.sugar.Infow("Stream gone live", "streamId", a.Stream.Id, "Platform StreamId", data.StreamId)
 
 	// Now that stream came online, start streaming
 	if a.Stream.Permanent {
@@ -137,14 +147,9 @@ func (a *Agent) HandleOneStreamInstance() {
 	}
 
 	// Set stream gone online, and set timeout for the stream
-	if a.Stream.Status != stream.StatusGoneLive {
-		a.sugar.Infow("Stream gone online", "streamId", a.Stream.Id, "Platform StreamId", data.StreamId)
-
-		a.Stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
-
-		a.Stream.ChangeStatus(stream.StatusGoneLive)
-		a.Stream.Listener.Status(a.Stream)
-	}
+	a.Stream.ScheduledEndAt = clock.Now().Add(LiveDuration)
+	a.Stream.ChangeStatus(stream.StatusGoneLive)
+	a.Stream.Listener.Status(a.Stream)
 
 	// Stop the dummy stream, if any
 	cancelDummyStreamCtx()
@@ -375,4 +380,59 @@ func (a *Agent) checkTimeout() {
 			return
 		}
 	}
+}
+
+var (
+	contextCancelledErr = errors.New("context canceled")
+)
+
+func (a *Agent) WaitUntilOffline(ctx context.Context, s *stream.Stream) error {
+	platform, ok := a.Broadcaster().Config.StreamPlatforms[a.Stream.Platform]
+	if !ok {
+		return fmt.Errorf("unknown platform: %s", a.Stream.Platform)
+	}
+	okErr := errors.New("ok")
+	t := a.Broadcaster().Config.Clock.TickerFunc(ctx, 3*time.Second, func() error {
+		_, err := platform.GetStream(ctx, s)
+		if err != nil {
+			if errors.Is(err, stream.NotOnlineErr) {
+				return okErr
+			}
+			return err
+		}
+		return nil
+	}, "WaitUntilOffline")
+	err := t.Wait()
+	if errors.Is(err, okErr) {
+		return nil
+	}
+	return err
+}
+
+func (a *Agent) WaitUntilOnline(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
+	platform, ok := a.Broadcaster().Config.StreamPlatforms[a.Stream.Platform]
+	if !ok {
+		return nil, fmt.Errorf("unknown platform: %s", a.Stream.Platform)
+	}
+	foundErr := errors.New("found")
+	var data *name.StreamData
+	t := a.Broadcaster().Config.Clock.TickerFunc(ctx, 3*time.Second, func() error {
+		var err error
+		data, err = platform.GetStream(ctx, s)
+		if err != nil {
+			if errors.Is(err, stream.NotOnlineErr) {
+				sugar.Debugw("Stream not online. Retrying getting stream", "streamId", s.Id)
+			} else {
+				sugar.Debugw("Failed to get streams. Retrying", "streamId", s.Id, "error", err)
+			}
+			return nil
+		}
+		sugar.Debugw("Detected stream live", "streamId", s.Id, "data", data)
+		return foundErr
+	}, "WaitUntilOnline")
+	err := t.Wait()
+	if errors.Is(err, foundErr) {
+		return data, nil
+	}
+	return nil, err
 }

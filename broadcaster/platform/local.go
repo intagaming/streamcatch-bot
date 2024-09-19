@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	gonanoid "github.com/matoous/go-nanoid/v2"
-	"go.uber.org/zap"
 	"io"
 	"streamcatch-bot/broadcaster/platform/name"
 	"streamcatch-bot/broadcaster/stream"
-	"time"
 )
 
 var (
@@ -23,28 +21,19 @@ func SetLocalOnline(streamerId stream.Id) {
 
 type LocalStreamPlatform struct{}
 
-func (l *LocalStreamPlatform) WaitForOnline(_ *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
+func (l *LocalStreamPlatform) GetStream(_ context.Context, s *stream.Stream) (*name.StreamData, error) {
+	if _, ok := localOnlineMap[s.Id]; ok {
 		select {
-		case <-ctx.Done():
-			return nil, contextCancelledErr
-		case <-ticker.C:
-			if _, ok := localOnlineMap[s.Id]; ok {
-				select {
-				case <-localOnlineMap[s.Id]:
-					streamId, err := gonanoid.New()
-					if err != nil {
-						panic(err)
-					}
-					return &name.WaitForOnlineData{StreamId: streamId}, nil
-				default:
-					continue
-				}
+		case <-localOnlineMap[s.Id]:
+			streamId, err := gonanoid.New()
+			if err != nil {
+				panic(err)
 			}
+			return &name.StreamData{StreamId: streamId}, nil
+		default:
 		}
 	}
+	return nil, stream.NotOnlineErr
 }
 
 func (l *LocalStreamPlatform) Stream(ctx context.Context, _ *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {

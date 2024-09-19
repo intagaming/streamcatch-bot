@@ -214,18 +214,19 @@ func (b *Broadcaster) ResumeStream(redisStream *scredis.RedisStream, discordUpda
 		SCRedisClient:  b.Config.SCRedisClient,
 	}
 	s := stream.Stream{
-		Id:                   stream.Id(redisStream.Id),
-		Url:                  redisStream.Url,
-		Platform:             redisStream.Platform,
-		CreatedAt:            redisStream.CreatedAt,
-		ScheduledEndAt:       redisStream.ScheduledEndAt,
-		LastStatus:           redisStream.LastStatus,
-		Status:               redisStream.Status,
-		Listener:             &sl,
-		ThumbnailUrl:         redisStream.ThumbnailUrl,
-		Permanent:            redisStream.Permanent,
-		PlatformLastStreamId: redisStream.PlatformLastStreamId,
-		Mutex:                mutex,
+		Id:             stream.Id(redisStream.Id),
+		Url:            redisStream.Url,
+		Platform:       redisStream.Platform,
+		CreatedAt:      redisStream.CreatedAt,
+		ScheduledEndAt: redisStream.ScheduledEndAt,
+		LastStatus:     redisStream.LastStatus,
+		Status:         redisStream.Status,
+		Listener:       &sl,
+		ThumbnailUrl:   redisStream.ThumbnailUrl,
+		Permanent:      redisStream.Permanent,
+		Mutex:          mutex,
+		Live:           redisStream.Live,
+		LastLiveAt:     redisStream.LastLiveAt,
 	}
 	b.HandleStream(&s)
 	b.sugar.Infof("Resumed stream %s", s.Id)

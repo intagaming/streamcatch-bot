@@ -5,7 +5,6 @@ import (
 	"context"
 	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"io"
 	"streamcatch-bot/broadcaster/platform"
@@ -94,9 +93,8 @@ func TestBroadcaster(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
-						<-ctx.Done()
-						return nil, nil
+					getStream: func(ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
+						return nil, stream.NotOnlineErr
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return nil
@@ -159,9 +157,8 @@ func TestBroadcaster(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
-						<-ctx.Done()
-						return nil, nil
+					getStream: func(ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
+						return nil, stream.NotOnlineErr
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return nil
@@ -196,9 +193,8 @@ func TestBroadcaster(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
-						<-ctx.Done()
-						return nil, nil
+					getStream: func(ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
+						return nil, stream.NotOnlineErr
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return nil
@@ -257,9 +253,8 @@ func TestBroadcaster(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
-						<-ctx.Done()
-						return &name.WaitForOnlineData{}, nil
+					getStream: func(ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
+						return nil, stream.NotOnlineErr
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return nil
@@ -333,9 +328,8 @@ func TestBroadcaster(t *testing.T) {
 			},
 			StreamPlatforms: map[name.Name]stream.Platform{
 				platform.Twitch: &TestTwitchPlatform{
-					waitForOnline: func(sugar *zap.SugaredLogger, ctx context.Context, s *stream.Stream) (*name.WaitForOnlineData, error) {
-						<-ctx.Done()
-						return &name.WaitForOnlineData{}, nil
+					getStream: func(ctx context.Context, s *stream.Stream) (*name.StreamData, error) {
+						return nil, stream.NotOnlineErr
 					},
 					stream: func(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {
 						return nil

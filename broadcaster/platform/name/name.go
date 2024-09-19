@@ -2,6 +2,6 @@ package name
 
 type Name string
 
-type WaitForOnlineData struct {
+type StreamData struct {
 	StreamId string
 }

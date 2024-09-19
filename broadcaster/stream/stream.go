@@ -3,7 +3,7 @@ package stream
 import (
 	"bytes"
 	"context"
-	"go.uber.org/zap"
+	"errors"
 	"io"
 	"streamcatch-bot/broadcaster/platform/name"
 	"time"
@@ -25,10 +25,11 @@ type Stream struct {
 	Listener        StatusListener
 	ThumbnailUrl    string
 	Permanent       bool
+	Mutex           Mutex
 	// Used for permanent stream handling. Only catch a stream once.
+	Live bool
 	// Can be used to detect if the stream ever went online.
-	PlatformLastStreamId *string
-	Mutex                Mutex
+	LastLiveAt time.Time
 }
 
 func (s *Stream) ChangeStatus(status Status) {
@@ -65,9 +66,9 @@ const (
 )
 
 type StatusListener interface {
-	Status(stream *Stream)
-	StreamStarted(stream *Stream)
-	Close(stream *Stream)
+	Status(s *Stream)
+	StreamStarted(s *Stream)
+	Close(s *Stream)
 }
 
 type Info struct {
@@ -76,7 +77,11 @@ type Info struct {
 
 type BroadcasterCtxKey struct{}
 
+var (
+	NotOnlineErr = errors.New("stream not online")
+)
+
 type Platform interface {
-	WaitForOnline(sugar *zap.SugaredLogger, ctx context.Context, stream *Stream) (*name.WaitForOnlineData, error)
+	GetStream(ctx context.Context, stream *Stream) (*name.StreamData, error)
 	Stream(ctx context.Context, stream *Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error
 }
