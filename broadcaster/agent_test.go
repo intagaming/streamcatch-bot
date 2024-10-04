@@ -24,6 +24,9 @@ import (
 
 type TestDiscordUpdater struct{}
 
+func (t *TestDiscordUpdater) ForgetMessage() {
+}
+
 func (t *TestDiscordUpdater) UpdateStreamCatchMessage(*stream.Stream) {
 }
 

@@ -26,7 +26,8 @@ func (sl *StreamListener) StreamStarted(*stream.Stream) {
 
 func (sl *StreamListener) Close(s *stream.Stream) {
 	sl.DiscordUpdater.UpdateStreamCatchMessage(s)
-	if s.Permanent && s.Status != stream.StatusEnded {
+	if s.Permanent {
+		sl.DiscordUpdater.ForgetMessage()
 		err := sl.SCRedisClient.DelStreamMessage(context.Background(), string(s.Id))
 		if err != nil {
 			sl.Sugar.Errorf("Error deleting stream message: %v", err)
@@ -49,4 +50,5 @@ func (sl *StreamListener) Close(s *stream.Stream) {
 
 type DiscordUpdater interface {
 	UpdateStreamCatchMessage(s *stream.Stream)
+	ForgetMessage()
 }

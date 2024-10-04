@@ -16,6 +16,10 @@ type RealDiscordUpdater struct {
 	AuthorId     string
 }
 
+func (r *RealDiscordUpdater) ForgetMessage() {
+	r.Message = nil
+}
+
 func (r *RealDiscordUpdater) UpdateStreamCatchMessage(s *stream.Stream) {
 	r.MessageMutex.Lock()
 	defer r.MessageMutex.Unlock()
