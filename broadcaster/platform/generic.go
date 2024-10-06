@@ -18,7 +18,9 @@ type GenericStreamPlatform struct{}
 
 type GenericStreamlinkInfo struct {
 	Metadata struct {
-		Id string `json:"id"`
+		Id     string `json:"id"`
+		Title  string `json:"title"`
+		Author string `json:"author"`
 	} `json:"metadata"`
 }
 
@@ -31,7 +33,11 @@ func (g *GenericStreamPlatform) GetStream(ctx context.Context, s *stream.Stream)
 		if err := json.Unmarshal(output, &streamlinkInfo); err != nil {
 			return nil, err
 		}
-		return &name.StreamData{StreamId: streamlinkInfo.Metadata.Id}, nil
+		return &name.StreamData{
+			Title:    streamlinkInfo.Metadata.Title,
+			StreamId: streamlinkInfo.Metadata.Id,
+			Author:   streamlinkInfo.Metadata.Author,
+		}, nil
 	} else if strings.Contains(string(output), `No playable streams`) {
 		return nil, stream.NotOnlineErr
 	}

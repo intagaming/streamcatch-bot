@@ -16,7 +16,9 @@ var YouTube name.Name = "youtube"
 
 type YoutubeStreamlinkInfo struct {
 	Metadata struct {
-		Id string `json:"id"`
+		Id     string `json:"id"`
+		Title  string `json:"title"`
+		Author string `json:"author"`
 	} `json:"metadata"`
 }
 
@@ -31,7 +33,11 @@ func (y *YoutubeStreamPlatform) GetStream(ctx context.Context, s *stream.Stream)
 		if err := json.Unmarshal(output, &youtubeStreamlinkInfo); err != nil {
 			return nil, err
 		}
-		return &name.StreamData{StreamId: youtubeStreamlinkInfo.Metadata.Id}, nil
+		return &name.StreamData{
+			Title:    youtubeStreamlinkInfo.Metadata.Title,
+			StreamId: youtubeStreamlinkInfo.Metadata.Id,
+			Author:   youtubeStreamlinkInfo.Metadata.Author,
+		}, nil
 	} else if strings.Contains(string(output), `No playable streams`) {
 		return nil, stream.NotOnlineErr
 	}

@@ -69,7 +69,8 @@ func (t *TwitchStreamPlatform) GetStream(_ context.Context, s *stream.Stream) (*
 	if len(streams.Data.Streams) == 0 {
 		return nil, stream.NotOnlineErr
 	}
-	return &name.StreamData{StreamId: streams.Data.Streams[0].ID}, nil
+	helixStream := streams.Data.Streams[0]
+	return &name.StreamData{Title: helixStream.Title, StreamId: helixStream.ID, Author: helixStream.UserName}, nil
 }
 
 func (t *TwitchStreamPlatform) Stream(ctx context.Context, s *stream.Stream, pipeWrite *io.PipeWriter, streamlinkErrBuf *bytes.Buffer, ffmpegErrBuf *bytes.Buffer) error {

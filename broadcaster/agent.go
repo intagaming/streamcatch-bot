@@ -138,6 +138,8 @@ func (a *Agent) HandleOneStreamInstance() {
 	}
 	a.Stream.Live = true
 	a.Stream.LastLiveAt = clock.Now()
+	a.Stream.Title = data.Title
+	a.Stream.Author = data.Author
 
 	a.sugar.Infow("Stream gone live", "streamId", a.Stream.Id, "Platform StreamId", data.StreamId)
 
@@ -381,10 +383,6 @@ func (a *Agent) checkTimeout() {
 		}
 	}
 }
-
-var (
-	contextCancelledErr = errors.New("context canceled")
-)
 
 func (a *Agent) WaitUntilOffline(ctx context.Context, s *stream.Stream) error {
 	platform, ok := a.Broadcaster().Config.StreamPlatforms[a.Stream.Platform]

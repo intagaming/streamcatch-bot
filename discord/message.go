@@ -209,7 +209,7 @@ func (bot *Bot) MakeStreamStartedMessage(s *stream.Stream, authorId string) *Str
 }
 
 func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream, authorId string) *StreamMessageContent {
-	content := fmt.Sprintf("<@%s>", authorId)
+	content := fmt.Sprintf("<@%s> %s went live! %s", authorId, s.Author, s.Title)
 	link := fmt.Sprintf("%s/%s", bot.mediaServerHlsUrl, s.Id)
 	isPermanentStr := "No"
 	if s.Permanent {
@@ -220,7 +220,7 @@ func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream, authorId string) *St
 		Embeds: []*discordgo.MessageEmbed{
 			{
 				Title:       "StreamCatch",
-				Description: "Streamer went online, watch now!",
+				Description: fmt.Sprintf("%s went online, watch now!", s.Author),
 				URL:         link,
 				Thumbnail: &discordgo.MessageEmbedThumbnail{
 					URL: s.ThumbnailUrl,
@@ -229,6 +229,10 @@ func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream, authorId string) *St
 					{
 						Name:  "Status",
 						Value: "🟢 Online",
+					},
+					{
+						Name:  "Title",
+						Value: s.Title,
 					},
 					{
 						Name:   "Stream URL",

@@ -29,7 +29,7 @@ func (l *LocalStreamPlatform) GetStream(_ context.Context, s *stream.Stream) (*n
 			if err != nil {
 				panic(err)
 			}
-			return &name.StreamData{StreamId: streamId}, nil
+			return &name.StreamData{Title: "Local Stream", StreamId: streamId, Author: "local"}, nil
 		default:
 		}
 	}

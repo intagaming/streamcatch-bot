@@ -30,6 +30,8 @@ type Stream struct {
 	Live bool
 	// Can be used to detect if the stream ever went online.
 	LastLiveAt time.Time
+	Title      string
+	Author     string
 }
 
 func (s *Stream) ChangeStatus(status Status) {
