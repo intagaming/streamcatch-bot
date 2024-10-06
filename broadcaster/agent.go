@@ -54,6 +54,8 @@ func (a *Agent) Run() {
 	// If a permanent stream resumes and is not Waiting, then catch the same stream session again.
 	if a.Stream.Permanent && a.Stream.Status != stream.StatusWaiting {
 		a.Stream.Live = false
+	} else if !a.Stream.Permanent {
+		a.Stream.Live = false
 	}
 	a.Stream.LastStatus = stream.StatusWaiting
 	a.Stream.Status = stream.StatusWaiting
@@ -118,7 +120,7 @@ func (a *Agent) HandleOneStreamInstance() {
 
 	// If stream is live, it is a permanent stream that's being handled. Must wait
 	// until stream comes offline to handle next stream instance.
-	if a.Stream.Live {
+	if a.Stream.Permanent && a.Stream.Live {
 		a.sugar.Debugw("Waiting for stream to come offline", "streamId", a.Stream.Id)
 		err := a.WaitUntilOffline(iterationCtx, a.Stream)
 		if err != nil {
