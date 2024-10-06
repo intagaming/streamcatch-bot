@@ -21,6 +21,7 @@ type StreamMessageContent struct {
 type PlaybackEntry struct {
 	Start    string  `json:"start"`
 	Duration float64 `json:"duration"`
+	Url      string  `json:"url"`
 }
 
 func (bot *Bot) GetPlaybackURL(s *stream.Stream) (string, error) {
@@ -45,7 +46,7 @@ func (bot *Bot) GetPlaybackURL(s *stream.Stream) (string, error) {
 		return "", errors.New("list empty")
 	}
 	lastEntry := list[len(list)-1]
-	return fmt.Sprintf("%s/get?path=%s&start=%s&duration=%f&format=mp4", bot.mediaServerPlaybackUrlPublic, s.Id, lastEntry.Start, lastEntry.Duration), nil
+	return lastEntry.Url, nil
 }
 
 func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream, authorId string) *StreamMessageContent {
