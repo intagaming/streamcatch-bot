@@ -143,6 +143,14 @@ func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream, authorId string) *Strea
 						Value: "🔴 Ended",
 					},
 					{
+						Name:  "Title",
+						Value: s.Title,
+					},
+					{
+						Name:  "Author",
+						Value: s.Author,
+					},
+					{
 						Name:   "Stream URL",
 						Value:  s.Url,
 						Inline: true,
@@ -234,6 +242,10 @@ func (bot *Bot) MakeStreamGoneLiveMessage(s *stream.Stream, authorId string) *St
 					{
 						Name:  "Title",
 						Value: s.Title,
+					},
+					{
+						Name:  "Author",
+						Value: s.Author,
 					},
 					{
 						Name:   "Stream URL",

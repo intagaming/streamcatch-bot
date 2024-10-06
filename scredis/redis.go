@@ -32,6 +32,8 @@ type RedisStream struct {
 	Permanent      bool          `json:"permanent"`
 	Live           bool          `json:"live"`
 	LastLiveAt     time.Time     `json:"last_live_at"`
+	Title          string        `json:"title,omitempty"`
+	Author         string        `json:"author,omitempty"`
 }
 
 func RedisStreamFromStream(s *stream.Stream) *RedisStream {
@@ -46,6 +48,8 @@ func RedisStreamFromStream(s *stream.Stream) *RedisStream {
 		ThumbnailUrl:   s.ThumbnailUrl,
 		Permanent:      s.Permanent,
 		Live:           s.Live,
+		Title:          s.Title,
+		Author:         s.Author,
 	}
 }
 

@@ -227,6 +227,8 @@ func (b *Broadcaster) ResumeStream(redisStream *scredis.RedisStream, discordUpda
 		Mutex:          mutex,
 		Live:           redisStream.Live,
 		LastLiveAt:     redisStream.LastLiveAt,
+		Title:          redisStream.Title,
+		Author:         redisStream.Author,
 	}
 	b.HandleStream(&s)
 	b.sugar.Infof("Resumed stream %s", s.Id)
