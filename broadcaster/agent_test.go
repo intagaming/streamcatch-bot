@@ -1185,7 +1185,7 @@ func TestAgent(t *testing.T) {
 		streamGoneOnline = false
 		advanceUntilCond(mClock, func() bool {
 			return !s.Live
-		}, 5*time.Second)
+		}, 10*time.Second)
 
 		streamGoneOnlineId = "stream2"
 		streamGoneOnline = true

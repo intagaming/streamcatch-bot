@@ -82,6 +82,17 @@ func (a *Agent) Run() {
 		if !a.Stream.Permanent || a.ctx.Err() != nil {
 			break
 		}
+		a.sugar.Debugw("Waiting 5 seconds before handle next instance")
+		continueCtx, cancel := context.WithCancel(a.ctx)
+		clock.AfterFunc(5*time.Second, func() {
+			cancel()
+		})
+		select {
+		case <-continueCtx.Done():
+			continue
+		case <-a.ctx.Done():
+			break
+		}
 	}
 }
 
