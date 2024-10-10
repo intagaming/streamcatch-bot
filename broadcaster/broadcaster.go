@@ -394,7 +394,8 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 	sugar.Debugf("combined filename: %s", combinedFileName)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	concatCmd := exec.CommandContext(ctx, "ffmpeg", "-f", "concat", "-safe", "0",
+	concatCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner",
+		"-loglevel", "error", "-f", "concat", "-safe", "0",
 		"-i", filepath.Join("tmp", filelistName), "-c", "copy",
 		filepath.Join("recordings", combinedFileName))
 	stderr, err := concatCmd.StderrPipe()
