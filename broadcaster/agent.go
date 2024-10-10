@@ -207,6 +207,7 @@ out:
 
 			switch {
 			case streamDuration >= DurationToConsiderStreamWentOnline:
+				// If stream is i.e. fulfilled, this close will be cancelled
 				a.Close(stream.ReasonStreamEnded, nil)
 			case attempt > MaxRetries:
 				a.Close(stream.ReasonErrored, FailedToStreamError)
@@ -246,6 +247,13 @@ func (a *Agent) Close(reason stream.EndedReason, err error) bool {
 
 	a.Stream.Listener.Status(a.Stream)
 	a.Stream.Listener.Close(a.Stream)
+
+	switch reason {
+	case stream.ReasonFulfilled, stream.ReasonStopOneInstance,
+		stream.ReasonStreamEnded, stream.ReasonForceStopped:
+		go a.Broadcaster().combineRecordings(*a.Stream, a.Stream.LastLiveAt, time.Now())
+	default:
+	}
 	return true
 }
 

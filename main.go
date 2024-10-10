@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"streamcatch-bot/broadcaster"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
@@ -24,6 +25,8 @@ import (
 	"streamcatch-bot/broadcaster/stream/streamlistener"
 	"streamcatch-bot/discord"
 	"streamcatch-bot/scredis"
+	"strings"
+	"time"
 )
 
 var isDev bool
@@ -102,6 +105,10 @@ func main() {
 	if mediaServerPublishPassword == "" {
 		sugar.Panic("MEDIA_SERVER_PUBLISH_PASSWORD is not set")
 	}
+	mediaServerPlaybackUrl := os.Getenv("MEDIA_SERVER_PLAYBACK_URL")
+	if mediaServerPlaybackUrl == "" {
+		sugar.Panic("MEDIA_SERVER_PLAYBACK_URL is not set")
+	}
 	mediaServerApiUrl := os.Getenv("MEDIA_SERVER_API_URL")
 	if mediaServerApiUrl == "" {
 		sugar.Panic("MEDIA_SERVER_API_URL is not set")
@@ -127,6 +134,36 @@ func main() {
 
 	var scRedisClient scredis.Client = &scredis.RealClient{Redis: rdb, Redsync: rs}
 
+	// Recordings server
+	err = os.MkdirAll("recordings", os.ModePerm)
+	if err != nil {
+		sugar.Fatalf("could not create recordings folder: %v", err)
+	}
+	recordingsFs := http.FileServer(http.Dir("recordings"))
+	http.Handle("/recordings/", http.StripPrefix("/recordings/", neuter(recordingsFs)))
+	clock := quartz.NewReal()
+	clock.TickerFunc(ctx, time.Minute, func() error {
+		sugar.Debugf("Removing old recordings")
+
+		cutoff := clock.Now().Add(-24 * time.Hour)
+		err := filepath.Walk("recordings", func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && info.ModTime().Before(cutoff) {
+				if err := os.Remove(path); err != nil {
+					sugar.Errorf("Failed to remove %s: %v", path, err)
+				}
+			}
+			return nil
+		})
+
+		if err != nil {
+			sugar.Errorf("Error walking old recordings dir: %v", err)
+		}
+		return nil
+	})
+
 	var bot *discord.Bot
 	bc := broadcaster.New(sugar, &broadcaster.Config{
 		TwitchClientId:                twitchClientId,
@@ -135,6 +172,7 @@ func main() {
 		MediaServerRtspHost:           mediaServerRtspHost,
 		MediaServerPublishUser:        mediaServerPublishUser,
 		MediaServerPublishPassword:    mediaServerPublishPassword,
+		MediaServerPlaybackUrl:        mediaServerPlaybackUrl,
 		MediaServerApiUrl:             mediaServerApiUrl,
 		FfmpegCmderCreator:            broadcaster.NewRealFfmpegCmder,
 		DummyStreamFfmpegCmderCreator: broadcaster.NewRealDummyStreamFfmpegCmder,
@@ -143,6 +181,7 @@ func main() {
 			if err != nil {
 				return false, err
 			}
+			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
 				return false, errors.New("response was not 200 but " + resp.Status)
 			}
@@ -169,7 +208,7 @@ func main() {
 				return &stream.Info{}, nil
 			}
 		},
-		Clock:         quartz.NewReal(),
+		Clock:         clock,
 		SCRedisClient: scRedisClient,
 		DiscordUpdaterCreator: func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error) {
 			ctx := context.Background()
@@ -233,10 +272,11 @@ func main() {
 
 			a.Close(stream.ReasonForceStopped, nil)
 		})
-		go func() {
-			_ = http.ListenAndServe(":8080", nil)
-		}()
 	}
+
+	go func() {
+		_ = http.ListenAndServe(":8080", nil)
+	}()
 
 	bot.Init()
 
@@ -263,4 +303,15 @@ func (l *localStreamListener) StreamStarted(*stream.Stream) {
 }
 
 func (l *localStreamListener) Close(*stream.Stream) {
+}
+
+func neuter(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

@@ -22,15 +22,15 @@ var (
 )
 
 type Bot struct {
-	initializationCtx            context.Context
-	cancelInitializationCtx      context.CancelFunc
-	scRedisClient                scredis.Client
-	sugar                        *zap.SugaredLogger
-	session                      *discordgo.Session
-	broadcaster                  *broadcaster.Broadcaster
-	mediaServerHlsUrl            string
-	mediaServerPlaybackUrl       string
-	mediaServerPlaybackUrlPublic string
+	initializationCtx       context.Context
+	cancelInitializationCtx context.CancelFunc
+	scRedisClient           scredis.Client
+	sugar                   *zap.SugaredLogger
+	session                 *discordgo.Session
+	broadcaster             *broadcaster.Broadcaster
+	mediaServerHlsUrl       string
+	mediaServerPlaybackUrl  string
+	recordingUrl            string
 }
 
 func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient scredis.Client) *Bot {
@@ -52,22 +52,22 @@ func New(sugar *zap.SugaredLogger, bc *broadcaster.Broadcaster, scRedisClient sc
 		sugar.Panic("MEDIA_SERVER_PLAYBACK_URL is not set")
 	}
 
-	mediaServerPlaybackUrlPublic := os.Getenv("MEDIA_SERVER_PLAYBACK_URL_PUBLIC")
-	if mediaServerPlaybackUrlPublic == "" {
-		sugar.Panic("MEDIA_SERVER_PLAYBACK_URL_PUBLIC is not set")
+	recordingUrl := os.Getenv("RECORDING_URL")
+	if recordingUrl == "" {
+		sugar.Panic("RECORDING_URL is not set")
 	}
 
 	initializationCtx, cancelInitializationCtx := context.WithTimeout(context.Background(), 30*time.Second)
 	bot := Bot{
-		initializationCtx:            initializationCtx,
-		cancelInitializationCtx:      cancelInitializationCtx,
-		sugar:                        sugar,
-		session:                      session,
-		broadcaster:                  bc,
-		mediaServerHlsUrl:            mediaServerHlsUrl,
-		mediaServerPlaybackUrl:       mediaServerPlaybackUrl,
-		mediaServerPlaybackUrlPublic: mediaServerPlaybackUrlPublic,
-		scRedisClient:                scRedisClient,
+		initializationCtx:       initializationCtx,
+		cancelInitializationCtx: cancelInitializationCtx,
+		sugar:                   sugar,
+		session:                 session,
+		broadcaster:             bc,
+		mediaServerHlsUrl:       mediaServerHlsUrl,
+		mediaServerPlaybackUrl:  mediaServerPlaybackUrl,
+		recordingUrl:            recordingUrl,
+		scRedisClient:           scRedisClient,
 	}
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {

@@ -9,7 +9,12 @@ import (
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/nicklaw5/helix/v2"
 	"go.uber.org/zap"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"streamcatch-bot/broadcaster/bcconfig"
 	"streamcatch-bot/broadcaster/platform"
 	"streamcatch-bot/broadcaster/platform/name"
@@ -32,6 +37,7 @@ type Config struct {
 	MediaServerRtspHost           string
 	MediaServerPublishUser        string
 	MediaServerPublishPassword    string
+	MediaServerPlaybackUrl        string
 	MediaServerApiUrl             string
 	FfmpegCmderCreator            func(ctx context.Context, config *Config, streamId stream.Id) FfmpegCmder
 	DummyStreamFfmpegCmderCreator func(ctx context.Context, streamUrl string) FfmpegCmder
@@ -292,4 +298,128 @@ func (b *Broadcaster) ResumeStreams() {
 		}
 		b.ResumeStream(&s, discordUpdater, mutex)
 	}
+}
+
+func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time.Time) {
+	sugar := b.sugar
+	sugar.Debugw("calling combineRecordings", "streamId", s.Id, "from", from, "to", to)
+	resp, err := http.Get(b.Config.MediaServerPlaybackUrl + "/list?path=" + string(s.Id))
+	if err != nil {
+		sugar.Errorf("list recordings failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		sugar.Errorf("could not get playback info for stream due to not ok; StatusCode: %d", resp.StatusCode)
+		return
+	}
+	type PlaybackEntry struct {
+		Start    string  `json:"start"`
+		Duration float64 `json:"duration"`
+	}
+	var list []PlaybackEntry
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		sugar.Errorf("could not read playback info: %v", err)
+		return
+	}
+	err = json.Unmarshal(bodyBytes, &list)
+	if err != nil {
+		sugar.Errorf("json unmarshal failed: %v", err)
+		return
+	}
+
+	var entries []*PlaybackEntry
+	for _, entry := range list {
+		parsedTime, err := time.Parse("2006-01-02T15:04:05.999999Z", entry.Start)
+		if err != nil {
+			sugar.Errorf("parse time failed: %v", err)
+			return
+		}
+		if (parsedTime.Equal(from) || parsedTime.After(from)) && (parsedTime.Equal(to) || parsedTime.Before(to)) {
+			entries = append(entries, &entry)
+		}
+	}
+
+	if err := os.MkdirAll("tmp", os.ModePerm); err != nil {
+		sugar.Errorf("failed to create tmp folder: %v", err)
+		return
+	}
+
+	var filenames []string
+
+	for _, entry := range entries {
+		filename := filepath.Base(fmt.Sprintf("%s-%s.mp4", s.Id, url.QueryEscape(entry.Start)))
+		filenames = append(filenames, filename)
+		out, err := os.Create(filepath.Join("tmp", filename))
+		if err != nil {
+			sugar.Errorf("failed to create file: %v", err)
+			return
+		}
+		fileResp, err := http.Get(fmt.Sprintf(
+			"%s/get?path=%s&start=%s&duration=%f&format=mp4",
+			b.Config.MediaServerPlaybackUrl,
+			s.Id,
+			url.QueryEscape(entry.Start),
+			entry.Duration))
+		if err != nil {
+			sugar.Errorf("get recording failed: %v", err)
+			return
+		}
+		_, err = io.Copy(out, fileResp.Body)
+		if err != nil {
+			sugar.Errorf("download recording failed: %v", err)
+			return
+		}
+		fileResp.Body.Close()
+	}
+
+	filelistName := fmt.Sprintf("%s-%d-list.txt", s.Id, time.Now().Unix())
+	filelist, err := os.Create(filepath.Join("tmp", filelistName))
+	if err != nil {
+		sugar.Errorf("failed to create filelist file: %v", err)
+		return
+	}
+	filelistBuffer := strings.Builder{}
+	for _, filename := range filenames {
+		filelistBuffer.WriteString(fmt.Sprintf("file '%s'\n", filename))
+	}
+	_, err = filelist.WriteString(filelistBuffer.String())
+	if err != nil {
+		sugar.Errorf("failed to write to filelist: %v", err)
+		return
+	}
+
+	combinedFileName := fmt.Sprintf("%s-%d.mp4", s.Id, s.LastLiveAt.Unix())
+	sugar.Debugf("combined filename: %s", combinedFileName)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	concatCmd := exec.CommandContext(ctx, "ffmpeg", "-f", "concat", "-safe", "0",
+		"-i", filepath.Join("tmp", filelistName), "-c", "copy",
+		filepath.Join("recordings", combinedFileName))
+	stderr, err := concatCmd.StderrPipe()
+	if err != nil {
+		sugar.Errorf("failed to establish stderror: %v", err)
+		return
+	}
+	err = concatCmd.Run()
+	if err != nil {
+		slurp, _ := io.ReadAll(stderr)
+		sugar.Errorf("failed to run combine command: %v; stderr: %s", err, slurp)
+		return
+	}
+
+	var filesToDelete []string
+	filesToDelete = append(filesToDelete, filepath.Join("tmp", filelistName))
+	for _, filename := range filenames {
+		filesToDelete = append(filesToDelete, filepath.Join("tmp", filename))
+	}
+	for _, filename := range filesToDelete {
+		err := os.Remove(filename)
+		if err != nil {
+			sugar.Errorf("could not remove file %s: %v", filename, err)
+		}
+	}
+
+	sugar.Infow("combine recordings successfully", "stream", s)
 }

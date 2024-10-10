@@ -1,13 +1,8 @@
 package discord
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	"io"
-	"net/http"
-	"net/url"
 	"streamcatch-bot/broadcaster/stream"
 	"strings"
 	"time"
@@ -25,28 +20,7 @@ type PlaybackEntry struct {
 }
 
 func (bot *Bot) GetPlaybackURL(s *stream.Stream) (string, error) {
-	resp, err := http.Get(bot.mediaServerPlaybackUrl + "/list?path=" + string(s.Id))
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", errors.New(fmt.Sprintf("could not get playback info for stream due to not ok; StatusCode: %d", resp.StatusCode))
-	}
-	var list []PlaybackEntry
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("could not read playback info: %w", err)
-	}
-	err = json.Unmarshal(bodyBytes, &list)
-	if err != nil {
-		return "", err
-	}
-
-	if len(list) == 0 {
-		return "", errors.New("list empty")
-	}
-	lastEntry := list[len(list)-1]
-	return fmt.Sprintf("%s/get?path=%s&start=%s&duration=%f&format=mp4", bot.mediaServerPlaybackUrlPublic, s.Id, url.QueryEscape(lastEntry.Start), lastEntry.Duration), nil
+	return fmt.Sprintf("%s/%s-%d.mp4", bot.recordingUrl, s.Id, s.LastLiveAt.Unix()), nil
 }
 
 func (bot *Bot) MakeStreamEndedMessage(s *stream.Stream, authorId string) *StreamMessageContent {
