@@ -374,30 +374,29 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 		fileResp.Body.Close()
 	}
 
-	filelistName := fmt.Sprintf("%s-%d-list.txt", s.Id, time.Now().Unix())
-	filelist, err := os.Create(filepath.Join("tmp", filelistName))
-	if err != nil {
-		sugar.Errorf("failed to create filelist file: %v", err)
-		return
-	}
-	filelistBuffer := strings.Builder{}
-	for _, filename := range filenames {
-		filelistBuffer.WriteString(fmt.Sprintf("file '%s'\n", filename))
-	}
-	_, err = filelist.WriteString(filelistBuffer.String())
-	if err != nil {
-		sugar.Errorf("failed to write to filelist: %v", err)
-		return
-	}
-
 	combinedFileName := fmt.Sprintf("%s-%d.mp4", s.Id, s.LastLiveAt.Unix())
 	sugar.Debugf("combined filename: %s", combinedFileName)
+
+	var inputs []string
+	filterBuffer := strings.Builder{}
+	for i, filename := range filenames {
+		inputs = append(inputs, "-i", filepath.Join("tmp", filename))
+		filterBuffer.WriteString(fmt.Sprintf("[%d:v:0]scale=854:480,setdar=16/9[%dv];", i, i))
+	}
+	for i := range filenames {
+		filterBuffer.WriteString(fmt.Sprintf("[%dv][%d:a:0]", i, i))
+	}
+	filterBuffer.WriteString(fmt.Sprintf("concat=n=%d:v=1:a=1[outv][outa]", len(filenames)))
+
+	args := []string{"ffmpeg", "-hide_banner", "-loglevel", "error"}
+	args = append(args, inputs...)
+	args = append(args, "-filter_complex", filterBuffer.String(),
+		"-map", "[outv]", "-map", "[outa]", "-vsync", "2",
+		filepath.Join("recordings", combinedFileName))
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	concatCmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner",
-		"-loglevel", "error", "-f", "concat", "-safe", "0",
-		"-i", filepath.Join("tmp", filelistName), "-c", "copy",
-		filepath.Join("recordings", combinedFileName))
+	concatCmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	stderr, err := concatCmd.StderrPipe()
 	if err != nil {
 		sugar.Errorf("failed to establish stderror: %v", err)
@@ -411,7 +410,6 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 	}
 
 	var filesToDelete []string
-	filesToDelete = append(filesToDelete, filepath.Join("tmp", filelistName))
 	for _, filename := range filenames {
 		filesToDelete = append(filesToDelete, filepath.Join("tmp", filename))
 	}
