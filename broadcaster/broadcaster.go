@@ -394,7 +394,7 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 		"-map", "[outv]", "-map", "[outa]", "-vsync", "2",
 		filepath.Join("recordings", combinedFileName))
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	concatCmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	stderr, err := concatCmd.StderrPipe()
