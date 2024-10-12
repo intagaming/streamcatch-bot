@@ -16,6 +16,8 @@ RUN go mod download
 COPY . .
 RUN go build .
 
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda-12.6/compat"
+
 ARG APP_ID
 ARG BOT_TOKEN
 ARG MEDIA_SERVER_API_URL
