@@ -387,12 +387,12 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 		filterBuffer.WriteString(fmt.Sprintf("[%dv][%d:a:0]", i, i))
 	}
 	filterBuffer.WriteString(fmt.Sprintf("concat=n=%d:v=1:a=1[concatv][outa]", len(filenames)))
-	filterBuffer.WriteString(";[concatv]fps=30[outv]")
 
 	args := []string{"ffmpeg", "-hide_banner", "-loglevel", "error"}
 	args = append(args, inputs...)
 	args = append(args, "-filter_complex", filterBuffer.String(),
-		"-map", "[outv]", "-map", "[outa]", "-vsync", "2",
+		"-map", "[outv]", "-map", "[outa]", "-c:v", "libx265", "-preset", "ultrafast", "-crf", "26",
+		"-movflags", "+faststart",
 		filepath.Join("recordings", combinedFileName))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
