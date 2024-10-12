@@ -4,7 +4,7 @@ COPY --from=golang:1.23.0-bookworm /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 RUN apt update
-RUN apt install -y pipx
+RUN apt install -y pipx ffmpeg
 RUN rm -rf /var/lib/apt/lists/*
 
 RUN pipx install streamlink
