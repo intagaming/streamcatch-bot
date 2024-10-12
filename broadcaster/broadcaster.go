@@ -386,7 +386,8 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 	for i := range filenames {
 		filterBuffer.WriteString(fmt.Sprintf("[%dv][%d:a:0]", i, i))
 	}
-	filterBuffer.WriteString(fmt.Sprintf("concat=n=%d:v=1:a=1[outv][outa]", len(filenames)))
+	filterBuffer.WriteString(fmt.Sprintf("concat=n=%d:v=1:a=1[concatv][outa]", len(filenames)))
+	filterBuffer.WriteString(";[concatv]fps=30[outv]")
 
 	args := []string{"ffmpeg", "-hide_banner", "-loglevel", "error"}
 	args = append(args, inputs...)
