@@ -8,6 +8,7 @@ RUN apt install -y pipx
 RUN rm -rf /var/lib/apt/lists/*
 
 RUN pipx install streamlink
+ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 COPY go.mod go.sum ./
