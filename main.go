@@ -123,6 +123,7 @@ func main() {
 		sugar.Warn("REDIS_ADDR is not set")
 	}
 	redisPassword := os.Getenv("REDIS_PASSWORD")
+	useNvidiaGpu := os.Getenv("NVIDIA_GPU")
 
 	rdb := goredislib.NewClient(&goredislib.Options{
 		Addr:     redisAddr,
@@ -238,6 +239,7 @@ func main() {
 				AuthorId:  authorId,
 			}, nil
 		},
+		UseNvidiaGpu: useNvidiaGpu == "1",
 	})
 
 	bot = discord.New(sugar, bc, scRedisClient)

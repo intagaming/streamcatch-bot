@@ -48,6 +48,7 @@ type Config struct {
 	StreamerInfoFetcher           func(ctx context.Context, s *stream.Stream) (*stream.Info, error)
 	SCRedisClient                 scredis.Client
 	DiscordUpdaterCreator         func(s *scredis.RedisStream) (streamlistener.DiscordUpdater, error)
+	UseNvidiaGpu                  bool
 }
 
 type Broadcaster struct {
@@ -302,7 +303,7 @@ func (b *Broadcaster) ResumeStreams() {
 
 func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time.Time) {
 	sugar := b.sugar
-	sugar.Debugw("calling combineRecordings", "streamId", s.Id, "from", from, "to", to)
+	sugar.Infow("combining recordings", "streamId", s.Id, "from", from, "to", to)
 	resp, err := http.Get(b.Config.MediaServerPlaybackUrl + "/list?path=" + string(s.Id))
 	if err != nil {
 		sugar.Errorf("list recordings failed: %v", err)
@@ -391,9 +392,13 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 	args := []string{"ffmpeg", "-hide_banner", "-loglevel", "error"}
 	args = append(args, inputs...)
 	args = append(args, "-filter_complex", filterBuffer.String(),
-		"-map", "[outv]", "-map", "[outa]", "-c:v", "libx265", "-preset", "ultrafast", "-crf", "26",
-		"-movflags", "+faststart",
-		filepath.Join("recordings", combinedFileName))
+		"-map", "[outv]", "-map", "[outa]", "-movflags", "+faststart")
+	if b.Config.UseNvidiaGpu {
+		args = append(args, "-c:v", "hevc_nvenc", "-preset", "p1", "-rc:v", "vbr", "-cq:v", "19")
+	} else {
+		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-crf", "26")
+	}
+	args = append(args, filepath.Join("recordings", combinedFileName))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
@@ -421,5 +426,5 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 		}
 	}
 
-	sugar.Infow("combine recordings successfully", "stream", s)
+	sugar.Infow("combine recordings successfully", "streamId", s.Id)
 }
