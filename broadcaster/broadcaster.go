@@ -396,7 +396,7 @@ func (b *Broadcaster) combineRecordings(s stream.Stream, from time.Time, to time
 	if b.Config.UseNvidiaGpu {
 		args = append(args, "-c:v", "hevc_nvenc", "-preset", "p1", "-rc:v", "vbr", "-cq:v", "19")
 	} else {
-		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-crf", "26")
+		args = append(args, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26")
 	}
 	args = append(args, filepath.Join("recordings", combinedFileName))
 
