@@ -49,14 +49,8 @@ func (a *Agent) Run() {
 		return
 	}
 
-	// TODO: properly resume stream. Involves changing the HandleOneStreamInstance logic.
-	//  For now, make it work like a new stream.
-	// If a permanent stream resumes and is not Waiting, then catch the same stream session again.
-	if a.Stream.Permanent && a.Stream.Status != stream.StatusWaiting {
-		a.Stream.Live = false
-	} else if !a.Stream.Permanent {
-		a.Stream.Live = false
-	}
+	// TODO: properly resume stream. For now, make it work like a new stream.
+	a.Stream.Live = false
 	a.Stream.LastStatus = stream.StatusWaiting
 	a.Stream.Status = stream.StatusWaiting
 	// TODO: store to db
