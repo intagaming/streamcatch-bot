@@ -29,20 +29,11 @@ import (
 	"time"
 )
 
-var isDev bool
-
-const (
-	devUsage = "whether to run in dev mode, which prints debug logs"
-)
-
-func init() {
-	flag.BoolVar(&isDev, "dev", false, devUsage)
-	flag.BoolVar(&isDev, "d", false, devUsage+" (shorthand)")
-}
-
 func main() {
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
+
+	isDev := os.Getenv("DEV") == "1"
 
 	var logger *zap.Logger
 	var err error
